@@ -1,0 +1,6 @@
+{
+  "name": "FamSpend",
+  "description": "Real-time family expense tracking, shared budgets, and live spending sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
