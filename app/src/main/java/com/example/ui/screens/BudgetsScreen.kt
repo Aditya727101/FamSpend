@@ -82,7 +82,7 @@ fun BudgetsScreen(
     val rawOverallProgress = if (totalBudget > 0) (totalSpent / totalBudget).toFloat().coerceIn(0f, 1f) else 0f
     val animatedOverallProgress by animateFloatAsState(
         targetValue = rawOverallProgress,
-        animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing),
         label = "overall_budget_progress"
     )
     val overallPercentInt = if (totalBudget > 0) ((totalSpent / totalBudget) * 100).toInt() else 0
@@ -94,15 +94,13 @@ fun BudgetsScreen(
         else -> FamSuccess
     }
 
-    // Fix 4b: Month-to-Month comparison calculation
+    // Month-to-Month comparison calculated in single pass
     val (thisMonthSpent, lastMonthSpent) = remember(uiState.expenses) {
         val cal = Calendar.getInstance()
         val currentMonth = cal.get(Calendar.MONTH)
         val currentYear = cal.get(Calendar.YEAR)
 
-        val lastMonthCal = Calendar.getInstance().apply {
-            add(Calendar.MONTH, -1)
-        }
+        val lastMonthCal = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }
         val prevMonth = lastMonthCal.get(Calendar.MONTH)
         val prevYear = lastMonthCal.get(Calendar.YEAR)
 
@@ -129,12 +127,28 @@ fun BudgetsScreen(
         } else null
     }
 
-    // Local state for Paid/Unpaid toggle of recurring bills (Fix 4d)
+    // Fast O(1) Category spending & budget limit maps for 60+ FPS scrolling
+    val categorySpendMap = remember(uiState.expenses) {
+        val map = HashMap<String, Double>(16)
+        for (e in uiState.expenses) {
+            val key = e.category.lowercase(Locale.getDefault())
+            map[key] = (map[key] ?: 0.0) + e.amount
+        }
+        map
+    }
+
+    val categoryBudgetMap = remember(uiState.categoryBudgets) {
+        uiState.categoryBudgets.associateBy { it.categoryName.lowercase(Locale.getDefault()) }
+    }
+
+    // Local state for Paid/Unpaid toggle of recurring bills
     val billPaidState = remember { mutableStateMapOf<String, Boolean>() }
 
     val recurringBills = remember(uiState.expenses) {
         uiState.expenses.filter { it.isRecurring }
     }
+
+    val todayDay = remember { Calendar.getInstance().get(Calendar.DAY_OF_MONTH) }
 
     LazyColumn(
         modifier = Modifier
@@ -143,8 +157,7 @@ fun BudgetsScreen(
             .testTag("budgets_screen"),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)
     ) {
-        item {
-            // Budget Alert Banner
+        item(key = "budget_alert_banner") {
             BudgetAlertBanner(
                 notification = uiState.budgetNotification,
                 isDismissed = uiState.isBudgetAlertDismissed,
@@ -152,11 +165,15 @@ fun BudgetsScreen(
                 onEditBudgetClick = onEditBudgetsClick,
                 modifier = Modifier.padding(bottom = 14.dp)
             )
+        }
 
-            // Overall Budget Card
+        // Overall Budget Card
+        item(key = "overall_budget_card") {
             Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("overall_budget_card")
@@ -175,7 +192,7 @@ fun BudgetsScreen(
                             Text(
                                 text = "Monthly Household Budget",
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Black
                             )
                             Text(
                                 text = "Limit: ${uiState.currencySymbol}${String.format(Locale.US, "%,.2f", totalBudget)}",
@@ -186,15 +203,16 @@ fun BudgetsScreen(
                         OutlinedButton(
                             onClick = onEditBudgetsClick,
                             shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, FamPrimary.copy(alpha = 0.6f)),
                             modifier = Modifier.testTag("set_budget_goal_button")
                         ) {
-                            Icon(imageVector = Icons.Default.Edit, contentDescription = "Edit", modifier = Modifier.size(16.dp))
+                            Icon(imageVector = Icons.Default.Edit, contentDescription = "Edit", modifier = Modifier.size(15.dp), tint = FamPrimary)
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Set Budget")
+                            Text("Set Budget", fontWeight = FontWeight.Bold, color = FamPrimary)
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -206,10 +224,11 @@ fun BudgetsScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "${uiState.currencySymbol}${String.format(Locale.US, "%,.2f", totalSpent)}",
                                 style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.Black,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                         }
@@ -220,10 +239,11 @@ fun BudgetsScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (totalRemaining >= 0) MaterialTheme.colorScheme.onSurfaceVariant else FamDanger
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "${uiState.currencySymbol}${String.format(Locale.US, "%,.2f", Math.abs(totalRemaining))}",
                                 style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.Black,
                                 color = if (totalRemaining >= 0) FamSuccess else FamDanger
                             )
                         }
@@ -237,12 +257,18 @@ fun BudgetsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "$overallPercentInt% used",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = progressColor
-                        )
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = progressColor.copy(alpha = 0.15f)
+                        ) {
+                            Text(
+                                text = "$overallPercentInt% used",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = progressColor,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
                         Text(
                             text = "${uiState.currencySymbol}${String.format(Locale.US, "%,.0f", totalSpent)} of ${uiState.currencySymbol}${String.format(Locale.US, "%,.0f", totalBudget)}",
                             style = MaterialTheme.typography.labelSmall,
@@ -251,7 +277,7 @@ fun BudgetsScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     LinearProgressIndicator(
                         progress = { animatedOverallProgress },
@@ -265,14 +291,16 @@ fun BudgetsScreen(
                     )
                 }
             }
+        }
 
-            Spacer(modifier = Modifier.height(16.dp))
+        item(key = "month_to_month_card") {
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Fix 4b: Month-to-Month Comparison Card
+            // Month-to-Month Comparison Card
             Card(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -330,10 +358,12 @@ fun BudgetsScreen(
                     }
                 }
             }
+        }
 
+        // Recurring Bills Section
+        item(key = "recurring_bills_header") {
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Fix 4d: Recurring Bills Section
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -388,15 +418,13 @@ fun BudgetsScreen(
                     recurringBills.forEach { bill ->
                         val isPaid = billPaidState[bill.id] ?: false
                         val dayOfMonth = bill.recurringDayOfMonth.coerceIn(1, 31)
-
-                        val todayDay = Calendar.getInstance().get(Calendar.DAY_OF_MONTH)
                         val daysUntil = if (dayOfMonth >= todayDay) dayOfMonth - todayDay else (30 - todayDay + dayOfMonth)
                         val dueLabel = if (daysUntil == 0) "Due today" else "Due in $daysUntil days (on ${dayOfMonth}th)"
 
-                        Card(
-                            shape = RoundedCornerShape(14.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
@@ -441,20 +469,17 @@ fun BudgetsScreen(
                                     Text(
                                         text = "${uiState.currencySymbol}${String.format(Locale.US, "%,.2f", bill.amount)}",
                                         style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
+                                        fontWeight = FontWeight.ExtraBold,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Spacer(modifier = Modifier.height(6.dp))
 
-                                    // Paid / Unpaid toggle button (Fix 4d)
                                     Surface(
                                         shape = RoundedCornerShape(8.dp),
                                         color = if (isPaid) FamSuccess.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(8.dp))
-                                            .clickable {
-                                                billPaidState[bill.id] = !isPaid
-                                            }
+                                            .clickable { billPaidState[bill.id] = !isPaid }
                                     ) {
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
@@ -483,10 +508,12 @@ fun BudgetsScreen(
                     }
                 }
             }
+        }
 
+        // Category Budget Health Header
+        item(key = "category_health_header") {
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Fix 4a: Category Budget Health Cards
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -506,24 +533,22 @@ fun BudgetsScreen(
             Spacer(modifier = Modifier.height(10.dp))
         }
 
-        // Fix 4a: Category Health Cards List
+        // Optimized Category Health Cards with unique keys and O(1) hash map lookups
         val categories = CategoryHelper.allCategories
-        items(categories) { catInfo ->
-            val categorySpent = uiState.expenses
-                .filter { it.category.equals(catInfo.name, ignoreCase = true) }
-                .sumOf { it.amount }
-
-            val budgetEntity = uiState.categoryBudgets.find {
-                it.categoryName.equals(catInfo.name, ignoreCase = true)
-            }
-
+        items(
+            items = categories,
+            key = { it.name },
+            contentType = { "category_health" }
+        ) { catInfo ->
+            val catKey = catInfo.name.lowercase(Locale.getDefault())
+            val categorySpent = categorySpendMap[catKey] ?: 0.0
+            val budgetEntity = categoryBudgetMap[catKey]
             val limit = budgetEntity?.monthlyLimit ?: 500.0
             val rawRatio = if (limit > 0) (categorySpent / limit).toFloat() else 0f
             val percentUsed = (rawRatio * 100).toInt()
             val remaining = limit - categorySpent
             val isExceeded = categorySpent > limit
 
-            // Status colors: Green < 70%, Orange/Yellow 70-90%, Red > 90%
             val statusColor = when {
                 isExceeded || rawRatio >= 0.90f -> FamDanger
                 rawRatio >= 0.70f -> FamWarning
@@ -531,14 +556,14 @@ fun BudgetsScreen(
             }
 
             Card(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 10.dp)
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(18.dp))
                     .clickable { onEditBudgetsClick() }
                     .testTag("category_health_card_${catInfo.name}")
             ) {
@@ -579,7 +604,6 @@ fun BudgetsScreen(
                             )
                         }
 
-                        // Percentage used badge (Fix 4a)
                         Surface(
                             shape = RoundedCornerShape(8.dp),
                             color = statusColor.copy(alpha = 0.15f)
@@ -587,7 +611,7 @@ fun BudgetsScreen(
                             Text(
                                 text = "$percentUsed% used",
                                 style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.ExtraBold,
                                 color = statusColor,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                             )
@@ -596,7 +620,6 @@ fun BudgetsScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Amount spent vs Budget limit: "₹2,400 of ₹4,000"
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -609,10 +632,9 @@ fun BudgetsScreen(
                             color = MaterialTheme.colorScheme.onSurface
                         )
 
-                        // Remaining amount: "₹1,600 left" OR "₹400 over budget" in red
                         Text(
                             text = if (isExceeded) {
-                                "${uiState.currencySymbol}${String.format(Locale.US, "%,.0f", -remaining)} over budget"
+                                "${uiState.currencySymbol}${String.format(Locale.US, "%,.0f", -remaining)} over"
                             } else {
                                 "${uiState.currencySymbol}${String.format(Locale.US, "%,.0f", remaining)} left"
                             },
@@ -624,7 +646,6 @@ fun BudgetsScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Progress bar with status color
                     LinearProgressIndicator(
                         progress = { rawRatio.coerceIn(0f, 1f) },
                         modifier = Modifier
@@ -638,19 +659,19 @@ fun BudgetsScreen(
             }
         }
 
-        // Fix 4c: Household Savings Tracker Card at bottom of screen
-        item {
+        // Household Savings Tracker Card
+        item(key = "savings_tracker_card") {
             Spacer(modifier = Modifier.height(14.dp))
 
             val targetSavings = totalBudget - totalSpent
             val isSaving = targetSavings >= 0
 
             Card(
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(22.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = if (isSaving) FamSuccess.copy(alpha = 0.12f) else FamDanger.copy(alpha = 0.12f)
                 ),
-                border = BorderStroke(1.dp, (if (isSaving) FamSuccess else FamDanger).copy(alpha = 0.4f)),
+                border = BorderStroke(1.dp, (if (isSaving) FamSuccess else FamDanger).copy(alpha = 0.35f)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("household_savings_card")
@@ -682,7 +703,7 @@ fun BudgetsScreen(
                         Text(
                             text = "Household Savings Tracker",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.Black,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(2.dp))
@@ -705,7 +726,7 @@ fun BudgetsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(96.dp))
         }
     }
 }

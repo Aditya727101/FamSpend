@@ -52,27 +52,23 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-/**
- * Format timestamp naturally:
- * - "Today, 2:30 PM"
- * - "Yesterday, 4:15 PM"
- * - "12 Oct, 4:15 PM"
- */
+private val sharedTimeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
+private val sharedDayMonthFormat = SimpleDateFormat("d MMM, h:mm a", Locale.getDefault())
+
 fun formatExpenseDateTime(timestamp: Long): String {
-    val calExpense = Calendar.getInstance().apply { timeInMillis = timestamp }
     val calToday = Calendar.getInstance()
-    val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(timestamp))
+    calToday.set(Calendar.HOUR_OF_DAY, 0)
+    calToday.set(Calendar.MINUTE, 0)
+    calToday.set(Calendar.SECOND, 0)
+    calToday.set(Calendar.MILLISECOND, 0)
+    val todayStart = calToday.timeInMillis
+    val yesterdayStart = todayStart - 86400000L
 
-    val isSameYear = calExpense.get(Calendar.YEAR) == calToday.get(Calendar.YEAR)
-    val isToday = isSameYear && calExpense.get(Calendar.DAY_OF_YEAR) == calToday.get(Calendar.DAY_OF_YEAR)
-
-    calToday.add(Calendar.DAY_OF_YEAR, -1)
-    val isYesterday = isSameYear && calExpense.get(Calendar.DAY_OF_YEAR) == calToday.get(Calendar.DAY_OF_YEAR)
-
+    val d = Date(timestamp)
     return when {
-        isToday -> "Today, $timeFormat"
-        isYesterday -> "Yesterday, $timeFormat"
-        else -> "${SimpleDateFormat("d MMM", Locale.getDefault()).format(Date(timestamp))}, $timeFormat"
+        timestamp >= todayStart -> "Today, ${sharedTimeFormat.format(d)}"
+        timestamp >= yesterdayStart -> "Yesterday, ${sharedTimeFormat.format(d)}"
+        else -> sharedDayMonthFormat.format(d)
     }
 }
 
@@ -87,10 +83,8 @@ fun RecentExpensesList(
     onAddExpenseClick: (() -> Unit)? = null,
     onSimulateClick: (() -> Unit)? = null
 ) {
-    val displayList = if (maxItems != null && maxItems > 0) {
-        expenses.take(maxItems)
-    } else {
-        expenses
+    val displayList = remember(expenses, maxItems) {
+        if (maxItems != null && maxItems > 0) expenses.take(maxItems) else expenses
     }
 
     if (displayList.isEmpty()) {
@@ -201,17 +195,22 @@ fun RecentExpenseCard(
     onEdit: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null
 ) {
-    val catInfo = CategoryHelper.getCategoryInfo(expense.category)
+    val catInfo = remember(expense.category) {
+        CategoryHelper.getCategoryInfo(expense.category)
+    }
     val timeFormatted = remember(expense.timestamp) {
         formatExpenseDateTime(expense.timestamp)
     }
 
     Card(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface
         ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
+        border = BorderStroke(
+            1.dp,
+            if (isSelected) FamPrimary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         modifier = Modifier
             .fillMaxWidth()
@@ -227,7 +226,7 @@ fun RecentExpenseCard(
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Category Icon Badge with category color background (Fix 3a)
+            // Category Icon Badge
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -254,11 +253,9 @@ fun RecentExpenseCard(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Main Details: Title, Category Name, Date & Time, Recurring Badge
+            // Main Details
             Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = expense.description.ifBlank { "Untitled Expense" },
                         style = MaterialTheme.typography.bodyLarge,
@@ -269,7 +266,6 @@ fun RecentExpenseCard(
                         modifier = Modifier.weight(1f, fill = false)
                     )
 
-                    // Fix 3a: Subtle "🔁 Recurring" badge if recurring
                     if (expense.isRecurring) {
                         Spacer(modifier = Modifier.width(6.dp))
                         Surface(
@@ -302,7 +298,6 @@ fun RecentExpenseCard(
 
                 Spacer(modifier = Modifier.height(3.dp))
 
-                // Category name (small text below title) & Date & Time
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = expense.category,
@@ -325,10 +320,10 @@ fun RecentExpenseCard(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Member who paid (avatar + name pill/tag)
+                // Member pill
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
                     modifier = Modifier.padding(top = 2.dp)
                 ) {
                     Row(
@@ -362,12 +357,12 @@ fun RecentExpenseCard(
 
             Spacer(modifier = Modifier.width(10.dp))
 
-            // Amount in ₹ — bold, right-aligned (Fix 3a)
+            // Amount
             Column(horizontalAlignment = Alignment.End) {
                 Text(
                     text = "${currencySymbol}${String.format(Locale.US, "%,.2f", expense.amount)}",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.ExtraBold,
+                    fontWeight = FontWeight.Black,
                     color = MaterialTheme.colorScheme.onSurface
                 )
             }

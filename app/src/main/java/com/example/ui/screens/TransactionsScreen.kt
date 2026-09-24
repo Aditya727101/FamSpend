@@ -57,6 +57,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.ExpenseEntity
+import com.example.data.model.FamilyMemberEntity
 import com.example.data.model.IncomeCategory
 import com.example.data.model.IncomeEntity
 import com.example.ui.components.CategoryHelper
@@ -66,6 +67,7 @@ import com.example.ui.components.SwipeableExpenseItem
 import com.example.ui.theme.FamDanger
 import com.example.ui.theme.FamPrimary
 import com.example.ui.theme.FamPrimaryLight
+import com.example.ui.theme.FamSuccess
 import com.example.viewmodel.UiState
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -78,12 +80,6 @@ enum class ExpenseSortOrder(val label: String) {
     HIGHEST_AMOUNT("Highest amount"),
     LOWEST_AMOUNT("Lowest amount")
 }
-
-data class ExpenseDateGroup(
-    val title: String,
-    val totalAmount: Double,
-    val expenses: List<ExpenseEntity>
-)
 
 sealed class UnifiedTransaction {
     abstract val id: String
@@ -131,6 +127,11 @@ fun TransactionsScreen(
     var showSortMenu by remember { mutableStateOf(false) }
     var expenseToDelete by remember { mutableStateOf<ExpenseEntity?>(null) }
     var incomeToDelete by remember { mutableStateOf<IncomeEntity?>(null) }
+
+    // Fast O(1) Member lookup map
+    val memberMap = remember(uiState.members) {
+        uiState.members.associateBy { it.id }
+    }
 
     // Key categories for filter chips
     val filterCategoryChips = listOf(
@@ -189,52 +190,49 @@ fun TransactionsScreen(
         thisMonthIncomes.sumOf { it.amount }
     }
 
-    // Group items by date header
+    // Fast pre-calculated day boundaries for 60+ FPS date header grouping
+    val (todayMidnight, yesterdayMidnight) = remember {
+        val cal = Calendar.getInstance()
+        cal.set(Calendar.HOUR_OF_DAY, 0)
+        cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+        val today = cal.timeInMillis
+        cal.add(Calendar.DAY_OF_YEAR, -1)
+        val yesterday = cal.timeInMillis
+        Pair(today, yesterday)
+    }
+
+    val dateFormatter = remember { SimpleDateFormat("d MMMM yyyy", Locale.getDefault()) }
+
     fun getDateHeader(timestamp: Long): String {
-        val calToday = Calendar.getInstance()
-        val todayYear = calToday.get(Calendar.YEAR)
-        val todayDay = calToday.get(Calendar.DAY_OF_YEAR)
-
-        val calYesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
-        val yestYear = calYesterday.get(Calendar.YEAR)
-        val yestDay = calYesterday.get(Calendar.DAY_OF_YEAR)
-
-        val tempCal = Calendar.getInstance().apply { timeInMillis = timestamp }
-        val itemYear = tempCal.get(Calendar.YEAR)
-        val itemDay = tempCal.get(Calendar.DAY_OF_YEAR)
-
         return when {
-            itemYear == todayYear && itemDay == todayDay -> "Today"
-            itemYear == yestYear && itemDay == yestDay -> "Yesterday"
-            itemYear == todayYear && tempCal.get(Calendar.MONTH) == calToday.get(Calendar.MONTH) -> {
-                SimpleDateFormat("d MMMM", Locale.getDefault()).format(Date(timestamp))
-            }
-            else -> {
-                SimpleDateFormat("d MMMM yyyy", Locale.getDefault()).format(Date(timestamp))
-            }
+            timestamp >= todayMidnight -> "Today"
+            timestamp in yesterdayMidnight until todayMidnight -> "Yesterday"
+            else -> dateFormatter.format(Date(timestamp))
         }
     }
 
-    val unifiedGroups = remember(sortedExpenses, filteredIncomes, transactionType) {
-        val list = mutableListOf<UnifiedTransaction>()
+    val unifiedGroups = remember(sortedExpenses, filteredIncomes, transactionType, sortOrder) {
+        val list = ArrayList<UnifiedTransaction>(sortedExpenses.size + filteredIncomes.size)
         if (transactionType == "All" || transactionType == "Expenses") {
-            list.addAll(sortedExpenses.map { UnifiedTransaction.Expense(it) })
+            for (e in sortedExpenses) list.add(UnifiedTransaction.Expense(e))
         }
         if (transactionType == "All" || transactionType == "Income") {
-            list.addAll(filteredIncomes.map { UnifiedTransaction.Income(it) })
+            for (i in filteredIncomes) list.add(UnifiedTransaction.Income(i))
         }
 
-        val sortedList = when (sortOrder) {
-            ExpenseSortOrder.NEWEST_FIRST -> list.sortedByDescending { it.timestamp }
-            ExpenseSortOrder.OLDEST_FIRST -> list.sortedBy { it.timestamp }
-            ExpenseSortOrder.HIGHEST_AMOUNT -> list.sortedByDescending { it.amount }
-            ExpenseSortOrder.LOWEST_AMOUNT -> list.sortedBy { it.amount }
+        when (sortOrder) {
+            ExpenseSortOrder.NEWEST_FIRST -> list.sortByDescending { it.timestamp }
+            ExpenseSortOrder.OLDEST_FIRST -> list.sortBy { it.timestamp }
+            ExpenseSortOrder.HIGHEST_AMOUNT -> list.sortByDescending { it.amount }
+            ExpenseSortOrder.LOWEST_AMOUNT -> list.sortBy { it.amount }
         }
 
         val groupsMap = LinkedHashMap<String, MutableList<UnifiedTransaction>>()
-        for (item in sortedList) {
+        for (item in list) {
             val header = getDateHeader(item.timestamp)
-            groupsMap.getOrPut(header) { mutableListOf() }.add(item)
+            groupsMap.getOrPut(header) { ArrayList() }.add(item)
         }
 
         groupsMap.map { (title, items) -> UnifiedDateGroup(title, items) }
@@ -247,7 +245,7 @@ fun TransactionsScreen(
             .padding(horizontal = 16.dp)
             .testTag("transactions_screen")
     ) {
-        item {
+        item(key = "transactions_header") {
             Spacer(modifier = Modifier.height(16.dp))
 
             // Screen Header with Title, Count, Sort, and Export Buttons
@@ -259,8 +257,8 @@ fun TransactionsScreen(
                 Column {
                     Text(
                         text = if (transactionType == "Income") "Income History" else "Transactions",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Black,
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     Text(
@@ -326,7 +324,7 @@ fun TransactionsScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // STEP 4: Segmented control: [All] [Expenses] [Income]
+            // Segmented control: [All] [Expenses] [Income]
             SingleChoiceSegmentedButtonRow(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -338,7 +336,7 @@ fun TransactionsScreen(
                         onClick = { transactionType = type },
                         shape = SegmentedButtonDefaults.itemShape(index = index, count = transactionTypes.size),
                         colors = SegmentedButtonDefaults.colors(
-                            activeContainerColor = if (type == "Income") Color(0xFF22C55E) else FamPrimary,
+                            activeContainerColor = if (type == "Income") FamSuccess else FamPrimary,
                             activeContentColor = Color.White,
                             inactiveContainerColor = MaterialTheme.colorScheme.surface,
                             inactiveContentColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -346,7 +344,7 @@ fun TransactionsScreen(
                     ) {
                         Text(
                             text = type,
-                            fontWeight = if (transactionType == type) FontWeight.Bold else FontWeight.Normal
+                            fontWeight = if (transactionType == type) FontWeight.ExtraBold else FontWeight.SemiBold
                         )
                     }
                 }
@@ -354,10 +352,10 @@ fun TransactionsScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // STEP 4: Summary Card when "Income" is selected
+            // Summary Card when "Income" is selected
             if (transactionType == "Income") {
                 Card(
-                    shape = RoundedCornerShape(18.dp),
+                    shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(containerColor = Color(0xFFDCFCE7)),
                     border = BorderStroke(1.dp, Color(0xFF86EFAC)),
                     modifier = Modifier
@@ -375,7 +373,7 @@ fun TransactionsScreen(
                             modifier = Modifier
                                 .size(44.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF22C55E)),
+                                .background(FamSuccess),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -436,10 +434,10 @@ fun TransactionsScreen(
                     }
                 },
                 singleLine = true,
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(16.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = if (transactionType == "Income") Color(0xFF22C55E) else FamPrimary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                    focusedBorderColor = if (transactionType == "Income") FamSuccess else FamPrimary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
                     focusedContainerColor = MaterialTheme.colorScheme.surface,
                     unfocusedContainerColor = MaterialTheme.colorScheme.surface
                 ),
@@ -448,7 +446,7 @@ fun TransactionsScreen(
                     .testTag("transactions_search_input")
             )
 
-            // Category filter chips only relevant for Expenses or All
+            // Category filter chips
             if (transactionType != "Income") {
                 Spacer(modifier = Modifier.height(12.dp))
                 LazyRow(
@@ -457,7 +455,7 @@ fun TransactionsScreen(
                         .fillMaxWidth()
                         .testTag("category_filter_chips")
                 ) {
-                    items(filterCategoryChips) { (chipLabel, catValue) ->
+                    items(filterCategoryChips, key = { it.first }) { (chipLabel, catValue) ->
                         val isSelected = if (catValue == null) {
                             uiState.selectedCategoryFilter == null
                         } else {
@@ -490,11 +488,12 @@ fun TransactionsScreen(
 
         // Empty state
         if (unifiedGroups.isEmpty()) {
-            item {
+            item(key = "transactions_empty_state") {
                 if (transactionType == "Income") {
                     Card(
                         shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 24.dp)
@@ -538,18 +537,25 @@ fun TransactionsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = group.title,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                        ) {
+                            Text(
+                                text = group.title,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
                     }
                 }
 
                 items(
                     items = group.items,
-                    key = { it.id }
+                    key = { it.id },
+                    contentType = { it.javaClass }
                 ) { item ->
                     Box(modifier = Modifier.padding(bottom = 8.dp)) {
                         when (item) {
@@ -565,7 +571,7 @@ fun TransactionsScreen(
                             is UnifiedTransaction.Income -> {
                                 IncomeItemCard(
                                     income = item.entity,
-                                    member = uiState.members.find { it.id == item.entity.receivedBy },
+                                    member = memberMap[item.entity.receivedBy],
                                     currencySymbol = uiState.currencySymbol,
                                     onDelete = { incomeToDelete = item.entity }
                                 )
@@ -576,7 +582,7 @@ fun TransactionsScreen(
             }
         }
 
-        item {
+        item(key = "transactions_bottom_spacer") {
             Spacer(modifier = Modifier.height(96.dp))
         }
     }
@@ -657,7 +663,7 @@ fun TransactionsScreen(
 @Composable
 fun IncomeItemCard(
     income: IncomeEntity,
-    member: com.example.data.model.FamilyMemberEntity?,
+    member: FamilyMemberEntity?,
     currencySymbol: String,
     onDelete: () -> Unit
 ) {
@@ -667,8 +673,9 @@ fun IncomeItemCard(
     }
 
     Card(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         modifier = Modifier
             .fillMaxWidth()
@@ -734,7 +741,7 @@ fun IncomeItemCard(
                     // Category chip
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
                     ) {
                         Text(
                             text = "${category.iconEmoji} ${category.displayName}",

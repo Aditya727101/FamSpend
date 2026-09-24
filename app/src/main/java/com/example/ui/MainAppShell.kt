@@ -11,8 +11,11 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.ui.zIndex
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.graphics.Brush
+import com.example.ui.theme.FamPrimary
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
@@ -213,86 +216,93 @@ fun MainAppShell(
                 )
             } else {
                 TopAppBar(
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(32.dp)
+                    title = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(com.example.ui.theme.FamPrimaryGradientStart, FamPrimary)
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
                                 Icon(
                                     imageVector = Icons.Default.AccountBalanceWallet,
                                     contentDescription = "FamSpend Logo",
-                                    tint = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(18.dp)
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
-                        }
 
-                        Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
 
-                        Column {
-                            Text(
-                                text = "FamSpend",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                            Text(
-                                text = uiState.householdName,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                },
-                actions = {
-                    val context = androidx.compose.ui.platform.LocalContext.current
-                    androidx.compose.material3.IconButton(
-                        onClick = { viewModel.signInWithGoogle(context) }
-                    ) {
-                        androidx.compose.material3.Icon(
-                            imageVector = androidx.compose.material.icons.Icons.Default.AccountCircle,
-                            contentDescription = "Sign in to Sync",
-                            tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                    
-                    // Active User Profile Switcher Chip
-                    uiState.activeMember?.let { active ->
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier
-                                .padding(end = 8.dp)
-                                .clickable { selectedTab = 4 }
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
-                                MemberAvatar(
-                                    name = active.name,
-                                    colorHex = active.avatarColorHex,
-                                    iconName = active.avatarIcon,
-                                    size = 22.dp
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
+                            Column {
                                 Text(
-                                    text = active.name.split(" ").firstOrNull() ?: active.name,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold
+                                    text = "FamSpend",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Black,
+                                    letterSpacing = 0.sp
+                                )
+                                Text(
+                                    text = uiState.householdName,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    },
+                    actions = {
+                        val context = androidx.compose.ui.platform.LocalContext.current
+                        androidx.compose.material3.IconButton(
+                            onClick = { viewModel.signInWithGoogle(context) }
+                        ) {
+                            androidx.compose.material3.Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Default.AccountCircle,
+                                contentDescription = "Sign in to Sync",
+                                tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        
+                        // Active User Profile Switcher Chip
+                        uiState.activeMember?.let { active ->
+                            Surface(
+                                shape = RoundedCornerShape(18.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                                modifier = Modifier
+                                    .padding(end = 8.dp)
+                                    .clickable { selectedTab = 4 }
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                ) {
+                                    MemberAvatar(
+                                        name = active.name,
+                                        colorHex = active.avatarColorHex,
+                                        iconName = active.avatarIcon,
+                                        size = 20.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = active.name.split(" ").firstOrNull() ?: active.name,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
                 )
-            )
             }
         },
         bottomBar = {

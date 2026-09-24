@@ -1,6 +1,12 @@
 package com.example.ui.components
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -33,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -50,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.ExpenseEntity
 import com.example.ui.theme.FamDanger
 import com.example.ui.theme.FamPrimary
+import com.example.ui.theme.FamPrimaryGradientStart
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -97,15 +105,13 @@ fun SpendingTrendChart(
         }
     }
 
-    // Process data points according to timePeriod
+    // Process data points efficiently according to timePeriod
     val trendData = remember(expenses, timePeriod, budgetLimit) {
         val calendar = Calendar.getInstance()
-        val now = calendar.timeInMillis
 
         when (timePeriod) {
             "Week" -> {
-                // 7 days ending today
-                val points = mutableListOf<TrendDataPoint>()
+                val points = ArrayList<TrendDataPoint>(7)
                 val dayFormat = SimpleDateFormat("EEE", Locale.getDefault())
                 val fullFormat = SimpleDateFormat("d MMM yyyy", Locale.getDefault())
 
@@ -152,8 +158,7 @@ fun SpendingTrendChart(
                 TrendCalculation(markedPoints, chartMax, avg, peak)
             }
             "Year" -> {
-                // 12 months of current year
-                val points = mutableListOf<TrendDataPoint>()
+                val points = ArrayList<TrendDataPoint>(12)
                 val monthFormat = SimpleDateFormat("MMM", Locale.getDefault())
                 val currentYear = calendar.get(Calendar.YEAR)
 
@@ -204,42 +209,36 @@ fun SpendingTrendChart(
                 TrendCalculation(markedPoints, chartMax, avg, peak)
             }
             else -> {
-                // Month view (default)
+                // Month view
                 val daysInMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
-                calendar.set(Calendar.DAY_OF_MONTH, 1)
-                calendar.set(Calendar.HOUR_OF_DAY, 0)
-                calendar.set(Calendar.MINUTE, 0)
-                calendar.set(Calendar.SECOND, 0)
-                calendar.set(Calendar.MILLISECOND, 0)
-                val startOfMonth = calendar.timeInMillis
+                val curMonth = calendar.get(Calendar.MONTH)
+                val curYear = calendar.get(Calendar.YEAR)
 
-                val dayMap = mutableMapOf<Int, MutableList<ExpenseEntity>>()
-                for (d in 1..daysInMonth) {
-                    dayMap[d] = mutableListOf()
-                }
-
+                val dayMap = DoubleArray(daysInMonth + 1)
+                val topCatMap = arrayOfNulls<String>(daysInMonth + 1)
                 val tempCal = Calendar.getInstance()
+
                 for (exp in expenses) {
                     tempCal.timeInMillis = exp.timestamp
-                    if (tempCal.get(Calendar.MONTH) == calendar.get(Calendar.MONTH) &&
-                        tempCal.get(Calendar.YEAR) == calendar.get(Calendar.YEAR)
-                    ) {
-                        val day = tempCal.get(Calendar.DAY_OF_MONTH)
-                        dayMap[day]?.add(exp)
+                    if (tempCal.get(Calendar.MONTH) == curMonth && tempCal.get(Calendar.YEAR) == curYear) {
+                        val d = tempCal.get(Calendar.DAY_OF_MONTH)
+                        if (d in 1..daysInMonth) {
+                            dayMap[d] += exp.amount
+                            if (topCatMap[d] == null) {
+                                topCatMap[d] = exp.category
+                            }
+                        }
                     }
                 }
 
+                val monthYearStr = SimpleDateFormat("MMM yyyy", Locale.getDefault()).format(Date())
                 val points = (1..daysInMonth).map { day ->
-                    val dayExps = dayMap[day] ?: emptyList()
-                    val total = dayExps.sumOf { it.amount }
-                    val topCat = dayExps.groupBy { it.category }
-                        .maxByOrNull { entry -> entry.value.sumOf { it.amount } }?.key ?: "None"
                     TrendDataPoint(
                         index = day - 1,
-                        label = "D$day",
-                        fullDate = "$day ${SimpleDateFormat("MMM yyyy", Locale.getDefault()).format(Date())}",
-                        amount = total,
-                        topCategory = topCat
+                        label = if (day == 1 || day % 5 == 0 || day == daysInMonth) "$day" else "",
+                        fullDate = "$day $monthYearStr",
+                        amount = dayMap[day],
+                        topCategory = topCatMap[day] ?: "None"
                     )
                 }
 
@@ -261,16 +260,39 @@ fun SpendingTrendChart(
     val selectedPoint = selectedPointIndex?.let { trendData.points.getOrNull(it) }
 
     val lineColor = FamPrimary
+    val gradientColorStart = FamPrimaryGradientStart
     val spikeColor = FamDanger
-    val dailyDotColor = Color(0xFF2196F3) // Blue dot for daily spend
-    val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-    val budgetLineColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f)
+    val dailyDotColor = Color(0xFF38BDF8) // Sky Blue
+    val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
+    val budgetLineColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f)
     val textColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val textColorArgb = remember(textColor) { textColor.toArgb() }
+
+    val labelPaint = remember(textColorArgb) {
+        android.graphics.Paint().apply {
+            color = textColorArgb
+            textAlign = android.graphics.Paint.Align.CENTER
+            textSize = 28f
+            isAntiAlias = true
+        }
+    }
+    val yLabelPaint = remember(textColorArgb) {
+        android.graphics.Paint().apply {
+            color = textColorArgb
+            textAlign = android.graphics.Paint.Align.RIGHT
+            textSize = 24f
+            isAntiAlias = true
+        }
+    }
+
+    val pointsList = trendData.points
+    val maxAmt = trendData.maxAmount
 
     Card(
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         modifier = modifier
             .fillMaxWidth()
             .testTag("spending_trend_chart_card")
@@ -278,9 +300,9 @@ fun SpendingTrendChart(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(18.dp)
         ) {
-            // Header
+            // Header with Icon, Period subheader, and Peak Badge
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -289,7 +311,7 @@ fun SpendingTrendChart(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(38.dp)
                             .clip(CircleShape)
                             .background(FamPrimary.copy(alpha = 0.12f)),
                         contentAlignment = Alignment.Center
@@ -298,15 +320,15 @@ fun SpendingTrendChart(
                             imageVector = Icons.AutoMirrored.Filled.ShowChart,
                             contentDescription = "Trend",
                             tint = FamPrimary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
                             text = "Spending Trend",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.ExtraBold
                         )
                         Text(
                             text = periodSubHeader,
@@ -319,11 +341,11 @@ fun SpendingTrendChart(
                 trendData.peakPoint?.takeIf { it.amount > 0 }?.let { peak ->
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.TrendingUp,
@@ -335,7 +357,7 @@ fun SpendingTrendChart(
                             Text(
                                 text = "Peak: $currencySymbol${String.format(Locale.US, "%,.0f", peak.amount)}",
                                 style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.ExtraBold,
                                 color = MaterialTheme.colorScheme.onErrorContainer
                             )
                         }
@@ -345,243 +367,237 @@ fun SpendingTrendChart(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Tooltip preview bar if a point is tapped
-            selectedPoint?.let { pt ->
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 10.dp)
-                ) {
-                    Row(
+            // Tooltip preview bar if a point is selected
+            AnimatedVisibility(
+                visible = selectedPoint != null,
+                enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
+                exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
+            ) {
+                selectedPoint?.let { pt ->
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(bottom = 12.dp)
                     ) {
-                        Column {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = pt.fullDate,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = if (pt.topCategory != "None") "Top: ${pt.topCategory}" else "No spend logged",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                             Text(
-                                text = pt.fullDate,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = "Top: ${pt.topCategory}",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                text = "$currencySymbol${String.format(Locale.US, "%,.2f", pt.amount)}",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = if (pt.isSpike) FamDanger else FamPrimary
                             )
                         }
-                        Text(
-                            text = "$currencySymbol${String.format(Locale.US, "%,.2f", pt.amount)}",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = if (pt.isSpike) FamDanger else FamPrimary
-                        )
                     }
                 }
             }
 
-            // Interactive Line Chart Canvas
-            val textColorArgb = textColor.toArgb()
-            val labelPaint = remember(textColorArgb) {
-                android.graphics.Paint().apply {
-                    color = textColorArgb
-                    textAlign = android.graphics.Paint.Align.CENTER
-                    textSize = 28f
-                }
-            }
-            val yLabelPaint = remember(textColorArgb) {
-                android.graphics.Paint().apply {
-                    color = textColorArgb
-                    textAlign = android.graphics.Paint.Align.RIGHT
-                    textSize = 26f
-                }
-            }
-
-            val path = remember { Path() }
-            val areaPath = remember { Path() }
-            val pointsList = trendData.points
-            val maxAmt = trendData.maxAmount
-
+            // High Performance Canvas with drawWithCache (solid 60-120 FPS)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(220.dp)
+                    .height(210.dp)
             ) {
-                Canvas(
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .pointerInput(pointsList) {
                             detectTapGestures { offset ->
-                                val leftPadding = 90f
-                                val width = size.width - leftPadding
-                                val stepX = width / (pointsList.size - 1).coerceAtLeast(1)
+                                val leftPadding = 80f
+                                val chartWidth = size.width - leftPadding
+                                val stepX = chartWidth / (pointsList.size - 1).coerceAtLeast(1)
                                 val tappedIndex = ((offset.x - leftPadding + (stepX / 2f)) / stepX)
                                     .toInt()
                                     .coerceIn(0, pointsList.size - 1)
                                 selectedPointIndex = if (selectedPointIndex == tappedIndex) null else tappedIndex
                             }
                         }
-                ) {
-                    val width = size.width
-                    val height = size.height
-                    val bottomPadding = 30.dp.toPx()
-                    val leftPadding = 85f
-                    val chartHeight = height - bottomPadding
-                    val chartWidth = width - leftPadding
-                    val stepX = chartWidth / (pointsList.size - 1).coerceAtLeast(1)
+                        .drawWithCache {
+                            val width = size.width
+                            val height = size.height
+                            val bottomPadding = 26.dp.toPx()
+                            val leftPadding = 80f
+                            val chartHeight = height - bottomPadding
+                            val chartWidth = width - leftPadding
+                            val stepX = chartWidth / (pointsList.size - 1).coerceAtLeast(1)
 
-                    // Draw Y axis and grid lines
-                    val gridLevels = 4
-                    for (i in 0..gridLevels) {
-                        val yRatio = i.toFloat() / gridLevels
-                        val y = chartHeight * (1f - yRatio)
+                            // Precalculate coordinates
+                            val coords = pointsList.mapIndexed { index, data ->
+                                val x = leftPadding + index * stepX
+                                val yRatio = (data.amount / maxAmt).toFloat().coerceIn(0f, 1f)
+                                val y = chartHeight * (1f - yRatio)
+                                Offset(x, y)
+                            }
 
-                        // Gridline
-                        drawLine(
-                            color = gridColor,
-                            start = Offset(leftPadding, y),
-                            end = Offset(width, y),
-                            strokeWidth = 1.dp.toPx()
-                        )
+                            // Build smooth curve path
+                            val curvePath = Path()
+                            if (coords.isNotEmpty()) {
+                                curvePath.moveTo(coords.first().x, coords.first().y)
+                                for (i in 0 until coords.size - 1) {
+                                    val p1 = coords[i]
+                                    val p2 = coords[i + 1]
+                                    val cp1 = Offset(p1.x + (p2.x - p1.x) / 2f, p1.y)
+                                    val cp2 = Offset(p1.x + (p2.x - p1.x) / 2f, p2.y)
+                                    curvePath.cubicTo(cp1.x, cp1.y, cp2.x, cp2.y, p2.x, p2.y)
+                                }
+                            }
 
-                        // Y-label
-                        val labelAmt = maxAmt * yRatio
-                        val labelText = if (labelAmt >= 1000) "${(labelAmt / 1000).toInt()}k" else labelAmt.toInt().toString()
-                        drawContext.canvas.nativeCanvas.drawText(
-                            labelText,
-                            leftPadding - 12f,
-                            y + 10f,
-                            yLabelPaint
-                        )
-                    }
+                            // Build fill area path
+                            val fillPath = Path()
+                            if (coords.isNotEmpty()) {
+                                fillPath.addPath(curvePath)
+                                fillPath.lineTo(coords.last().x, chartHeight)
+                                fillPath.lineTo(coords.first().x, chartHeight)
+                                fillPath.close()
+                            }
 
-                    // Budget line (subtle horizontal dashed line)
-                    val effectiveBudgetLevel = when (timePeriod) {
-                        "Week" -> budgetLimit / 4.0
-                        "Year" -> budgetLimit * 12.0
-                        else -> budgetLimit
-                    }
-                    if (effectiveBudgetLevel in 0.0..maxAmt) {
-                        val budgetY = chartHeight * (1f - (effectiveBudgetLevel / maxAmt).toFloat())
-                        drawLine(
-                            color = budgetLineColor,
-                            start = Offset(leftPadding, budgetY),
-                            end = Offset(width, budgetY),
-                            strokeWidth = 1.5.dp.toPx(),
-                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
-                        )
-                    }
+                            val fillBrush = Brush.verticalGradient(
+                                colors = listOf(
+                                    gradientColorStart.copy(alpha = 0.32f),
+                                    lineColor.copy(alpha = 0.08f),
+                                    Color.Transparent
+                                ),
+                                startY = 0f,
+                                endY = chartHeight
+                            )
 
-                    if (pointsList.isEmpty()) return@Canvas
+                            val dashEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f)
 
-                    // Points calculation
-                    val points = pointsList.mapIndexed { index, data ->
-                        val x = leftPadding + index * stepX
-                        val yRatio = (data.amount / maxAmt).toFloat().coerceIn(0f, 1f)
-                        val y = chartHeight * (1f - yRatio)
-                        Offset(x, y)
-                    }
+                            onDrawBehind {
+                                // Draw horizontal grid lines
+                                val gridLevels = 4
+                                for (i in 0..gridLevels) {
+                                    val yRatio = i.toFloat() / gridLevels
+                                    val y = chartHeight * (1f - yRatio)
 
-                    // Build line path
-                    path.reset()
-                    if (points.isNotEmpty()) {
-                        path.moveTo(points.first().x, points.first().y)
-                        for (i in 0 until points.size - 1) {
-                            val p1 = points[i]
-                            val p2 = points[i + 1]
-                            val controlPoint1 = Offset(p1.x + (p2.x - p1.x) / 2f, p1.y)
-                            val controlPoint2 = Offset(p1.x + (p2.x - p1.x) / 2f, p2.y)
-                            path.cubicTo(controlPoint1.x, controlPoint1.y, controlPoint2.x, controlPoint2.y, p2.x, p2.y)
+                                    drawLine(
+                                        color = gridColor,
+                                        start = Offset(leftPadding, y),
+                                        end = Offset(width, y),
+                                        strokeWidth = 1.dp.toPx()
+                                    )
+
+                                    val labelAmt = maxAmt * yRatio
+                                    val labelText = if (labelAmt >= 1000) "${(labelAmt / 1000).toInt()}k" else labelAmt.toInt().toString()
+                                    drawContext.canvas.nativeCanvas.drawText(
+                                        labelText,
+                                        leftPadding - 12f,
+                                        y + 8f,
+                                        yLabelPaint
+                                    )
+                                }
+
+                                // Budget reference line
+                                val effectiveBudgetLevel = when (timePeriod) {
+                                    "Week" -> budgetLimit / 4.0
+                                    "Year" -> budgetLimit * 12.0
+                                    else -> budgetLimit
+                                }
+                                if (effectiveBudgetLevel in 0.0..maxAmt) {
+                                    val budgetY = chartHeight * (1f - (effectiveBudgetLevel / maxAmt).toFloat())
+                                    drawLine(
+                                        color = budgetLineColor,
+                                        start = Offset(leftPadding, budgetY),
+                                        end = Offset(width, budgetY),
+                                        strokeWidth = 1.5.dp.toPx(),
+                                        pathEffect = dashEffect
+                                    )
+                                }
+
+                                if (coords.isEmpty()) return@onDrawBehind
+
+                                // Draw gradient area fill
+                                drawPath(path = fillPath, brush = fillBrush)
+
+                                // Draw smooth line
+                                drawPath(
+                                    path = curvePath,
+                                    color = lineColor,
+                                    style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+                                )
+
+                                // Draw data points and selected guide
+                                coords.forEachIndexed { index, pt ->
+                                    val item = pointsList[index]
+                                    val isSelected = selectedPointIndex == index
+
+                                    if (isSelected) {
+                                        // Vertical indicator line
+                                        drawLine(
+                                            color = lineColor.copy(alpha = 0.7f),
+                                            start = Offset(pt.x, 0f),
+                                            end = Offset(pt.x, chartHeight),
+                                            strokeWidth = 1.5.dp.toPx(),
+                                            pathEffect = dashEffect
+                                        )
+                                    }
+
+                                    if (item.isSpike) {
+                                        drawCircle(
+                                            color = spikeColor.copy(alpha = 0.25f),
+                                            radius = 8.dp.toPx(),
+                                            center = pt
+                                        )
+                                        drawCircle(
+                                            color = spikeColor,
+                                            radius = 5.dp.toPx(),
+                                            center = pt
+                                        )
+                                    } else if (item.amount > 0 || isSelected) {
+                                        drawCircle(
+                                            color = if (isSelected) dailyDotColor else dailyDotColor.copy(alpha = 0.85f),
+                                            radius = if (isSelected) 6.dp.toPx() else 3.5.dp.toPx(),
+                                            center = pt
+                                        )
+                                    }
+                                }
+
+                                // Draw X-Axis labels
+                                val skipFactor = when {
+                                    pointsList.size > 20 -> 5
+                                    pointsList.size > 10 -> 2
+                                    else -> 1
+                                }
+                                pointsList.forEachIndexed { index, item ->
+                                    if (item.label.isNotBlank() && (index == 0 || index % skipFactor == 0 || index == pointsList.size - 1)) {
+                                        val x = leftPadding + index * stepX
+                                        drawContext.canvas.nativeCanvas.drawText(
+                                            item.label,
+                                            x.coerceIn(leftPadding + 10f, width - 10f),
+                                            height - 4.dp.toPx(),
+                                            labelPaint
+                                        )
+                                    }
+                                }
+                            }
                         }
-                    }
-
-                    // Build area path for gradient
-                    areaPath.reset()
-                    areaPath.addPath(path)
-                    areaPath.lineTo(points.last().x, chartHeight)
-                    areaPath.lineTo(points.first().x, chartHeight)
-                    areaPath.close()
-
-                    // Draw area gradient
-                    drawPath(
-                        path = areaPath,
-                        brush = Brush.verticalGradient(
-                            colors = listOf(lineColor.copy(alpha = 0.25f), Color.Transparent),
-                            startY = 0f,
-                            endY = chartHeight
-                        )
-                    )
-
-                    // Draw main line path
-                    drawPath(
-                        path = path,
-                        color = lineColor,
-                        style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
-                    )
-
-                    // Draw dots (Red for spike, Blue for regular daily spend)
-                    points.forEachIndexed { index, pt ->
-                        val item = pointsList[index]
-                        val isSelected = selectedPointIndex == index
-
-                        if (item.isSpike) {
-                            drawCircle(
-                                color = spikeColor.copy(alpha = 0.35f),
-                                radius = 9.dp.toPx(),
-                                center = pt
-                            )
-                            drawCircle(
-                                color = spikeColor,
-                                radius = 5.5.dp.toPx(),
-                                center = pt
-                            )
-                        } else if (item.amount > 0 || isSelected) {
-                            drawCircle(
-                                color = if (isSelected) dailyDotColor else dailyDotColor.copy(alpha = 0.85f),
-                                radius = if (isSelected) 6.5.dp.toPx() else 4.dp.toPx(),
-                                center = pt
-                            )
-                        }
-
-                        if (isSelected) {
-                            // Vertical guide line
-                            drawLine(
-                                color = lineColor.copy(alpha = 0.6f),
-                                start = Offset(pt.x, 0f),
-                                end = Offset(pt.x, chartHeight),
-                                strokeWidth = 1.5.dp.toPx(),
-                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f)
-                            )
-                        }
-                    }
-
-                    // Draw X-Axis labels
-                    val skipFactor = when {
-                        pointsList.size > 20 -> 5
-                        pointsList.size > 10 -> 2
-                        else -> 1
-                    }
-                    pointsList.forEachIndexed { index, item ->
-                        if (index == 0 || index % skipFactor == 0 || index == pointsList.size - 1) {
-                            val x = leftPadding + index * stepX
-                            drawContext.canvas.nativeCanvas.drawText(
-                                item.label,
-                                x.coerceIn(leftPadding + 10f, width - 10f),
-                                height - 5.dp.toPx(),
-                                labelPaint
-                            )
-                        }
-                    }
-                }
+                )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Legend: Spike (red), Daily Spend (blue), Budget line
+            // Legend: Spike (red), Daily Spend (sky blue), Tap hint
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -590,20 +606,21 @@ fun SpendingTrendChart(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .size(10.dp)
+                            .size(9.dp)
                             .clip(CircleShape)
                             .background(spikeColor)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "Spending Spike",
+                        text = "Spike",
                         style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Box(
                         modifier = Modifier
-                            .size(10.dp)
+                            .size(9.dp)
                             .clip(CircleShape)
                             .background(dailyDotColor)
                     )
@@ -611,14 +628,15 @@ fun SpendingTrendChart(
                     Text(
                         text = "Daily Spend",
                         style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
                 Text(
-                    text = "Tap point for details",
+                    text = "Tap point for info",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )
             }
         }

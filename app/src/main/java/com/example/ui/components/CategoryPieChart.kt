@@ -4,6 +4,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -13,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -48,6 +52,14 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.ExpenseEntity
 import java.util.Locale
 
+data class CategorySlice(
+    val category: CategoryInfo,
+    val amount: Double,
+    val startAngle: Float,
+    val sweepAngle: Float,
+    val percentage: Int
+)
+
 @Composable
 fun CategoryPieChart(
     categorySums: List<Pair<CategoryInfo, Double>>,
@@ -73,12 +85,30 @@ fun CategoryPieChart(
         animatedProgress.snapTo(0f)
         animatedProgress.animateTo(
             targetValue = 1f,
-            animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing)
+            animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing)
         )
     }
 
-    val selectedCategoryInfo = remember(selectedCategoryName, categorySums) {
-        categorySums.find { it.first.name.equals(selectedCategoryName, ignoreCase = true) }
+    // Precalculate slices for 60+ FPS rendering without per-frame math
+    val slices = remember(categorySums, totalSpent) {
+        var currentAngle = 0f
+        categorySums.map { (cat, amt) ->
+            val sweep = ((amt / totalSpent) * 360.0).toFloat()
+            val pct = ((amt / totalSpent) * 100.0).toInt()
+            val slice = CategorySlice(
+                category = cat,
+                amount = amt,
+                startAngle = currentAngle,
+                sweepAngle = sweep,
+                percentage = pct
+            )
+            currentAngle += sweep
+            slice
+        }
+    }
+
+    val selectedSlice = remember(selectedCategoryName, slices) {
+        slices.find { it.category.name.equals(selectedCategoryName, ignoreCase = true) }
     }
 
     val selectedTransactionCount = remember(selectedCategoryName, expenses) {
@@ -86,19 +116,21 @@ fun CategoryPieChart(
         else expenses.count { it.category.equals(selectedCategoryName, ignoreCase = true) }
     }
 
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Donut Chart
+        // Donut Chart Container
         Box(
-            modifier = Modifier.size(230.dp),
+            modifier = Modifier.size(240.dp),
             contentAlignment = Alignment.Center
         ) {
             Canvas(
                 modifier = Modifier
-                    .size(200.dp)
-                    .pointerInput(categorySums) {
+                    .size(210.dp)
+                    .pointerInput(slices) {
                         detectTapGestures { offset ->
                             val center = Offset(size.width / 2f, size.height / 2f)
                             val touchVec = offset - center
@@ -107,102 +139,146 @@ fun CategoryPieChart(
                             // Adjust for -90 start angle
                             val adjustedAngle = (angle + 90f) % 360f
 
-                            var currentAngle = 0f
-                            for ((cat, amt) in categorySums) {
-                                val sweep = ((amt / totalSpent) * 360f).toFloat()
-                                if (adjustedAngle in currentAngle..(currentAngle + sweep)) {
-                                    selectedCategoryName = if (selectedCategoryName == cat.name) null else cat.name
+                            for (slice in slices) {
+                                if (adjustedAngle in slice.startAngle..(slice.startAngle + slice.sweepAngle)) {
+                                    selectedCategoryName = if (selectedCategoryName == slice.category.name) null else slice.category.name
                                     break
                                 }
-                                currentAngle += sweep
                             }
                         }
                     }
             ) {
-                var startAngle = -90f
-                val baseStrokeWidth = 32.dp.toPx()
-                val activeStrokeWidth = 40.dp.toPx()
-                val radius = size.width / 2 - activeStrokeWidth / 2
+                val baseStrokeWidth = 28.dp.toPx()
+                val activeStrokeWidth = 36.dp.toPx()
+                val radius = (size.width - activeStrokeWidth) / 2f
+                val topLeft = Offset(activeStrokeWidth / 2f, activeStrokeWidth / 2f)
+                val arcSize = Size(radius * 2f, radius * 2f)
+                val progress = animatedProgress.value
 
-                for ((category, amount) in categorySums) {
-                    val sweepAngle = (amount / totalSpent).toFloat() * 360f * animatedProgress.value
-                    val isSelected = category.name.equals(selectedCategoryName, ignoreCase = true)
+                // Draw background track ring
+                drawArc(
+                    color = trackColor,
+                    startAngle = 0f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = Stroke(width = baseStrokeWidth, cap = StrokeCap.Round)
+                )
 
-                    if (sweepAngle > 0) {
+                // Draw category arcs with gap and progress
+                for (slice in slices) {
+                    val isSelected = slice.category.name.equals(selectedCategoryName, ignoreCase = true)
+                    val sweep = slice.sweepAngle * progress
+
+                    if (sweep > 0f) {
+                        val strokeW = if (isSelected) activeStrokeWidth else baseStrokeWidth
                         drawArc(
-                            color = category.color,
-                            startAngle = startAngle,
-                            sweepAngle = sweepAngle,
+                            color = slice.category.color,
+                            startAngle = -90f + slice.startAngle * progress,
+                            sweepAngle = (sweep - 1.5f).coerceAtLeast(0.5f),
                             useCenter = false,
-                            topLeft = Offset(activeStrokeWidth / 2, activeStrokeWidth / 2),
-                            size = Size(radius * 2, radius * 2),
-                            style = Stroke(
-                                width = if (isSelected) activeStrokeWidth else baseStrokeWidth,
-                                cap = StrokeCap.Butt
-                            )
+                            topLeft = topLeft,
+                            size = arcSize,
+                            style = Stroke(width = strokeW, cap = StrokeCap.Round)
                         )
-                        startAngle += sweepAngle
                     }
                 }
             }
 
-            // Center Text
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "Total Spend",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "${currencySymbol}${String.format(Locale.US, "%,.0f", totalSpent)}",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+            // Center Stat Text with Glassmorphism subtle pill
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                shadowElevation = 2.dp,
+                modifier = Modifier.size(116.dp)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "Total Spend",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "${currencySymbol}${String.format(Locale.US, "%,.0f", totalSpent)}",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 20.sp
+                    )
+                    if (selectedSlice != null) {
+                        Text(
+                            text = "${selectedSlice.percentage}% in ${selectedSlice.category.name.split(" ").first()}",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = selectedSlice.category.color
+                        )
+                    }
+                }
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Selected Category Summary Card (Fix 2d)
-        selectedCategoryInfo?.let { (cat, amt) ->
-            val count = if (selectedTransactionCount > 0) selectedTransactionCount else 1
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = cat.color.copy(alpha = 0.12f),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp)
-                    .testTag("selected_category_summary_card")
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+        // Selected Category Summary Card
+        AnimatedVisibility(
+            visible = selectedSlice != null,
+            enter = fadeIn(animationSpec = tween(150)),
+            exit = fadeOut(animationSpec = tween(150))
+        ) {
+            selectedSlice?.let { slice ->
+                val count = if (selectedTransactionCount > 0) selectedTransactionCount else 1
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = slice.category.color.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, slice.category.color.copy(alpha = 0.25f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .testTag("selected_category_summary_card")
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(cat.color),
-                        contentAlignment = Alignment.Center
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = cat.icon,
-                            contentDescription = cat.name,
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(slice.category.color),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = slice.category.icon,
+                                contentDescription = slice.category.name,
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
 
-                    Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
 
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "You spent ${currencySymbol}${String.format(Locale.US, "%,.2f", amt)} on ${cat.name} this $periodLabel across $count transaction${if (count != 1) "s" else ""}",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "${slice.category.name} (${slice.percentage}%)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Spent ${currencySymbol}${String.format(Locale.US, "%,.2f", slice.amount)} this $periodLabel across $count transaction${if (count != 1) "s" else ""}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -210,54 +286,58 @@ fun CategoryPieChart(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Legend List: [Color dot] Category Name — ₹Amount (X%)
+        // Legend List with Smooth Click Selection
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            categorySums.forEach { (cat, amt) ->
-                val isSelected = cat.name.equals(selectedCategoryName, ignoreCase = true)
-                val percent = if (totalSpent > 0) ((amt / totalSpent) * 100).toInt() else 0
+            slices.forEach { slice ->
+                val isSelected = slice.category.name.equals(selectedCategoryName, ignoreCase = true)
 
                 Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isSelected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(
+                        1.dp,
+                        if (isSelected) slice.category.color.copy(alpha = 0.6f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(12.dp))
                         .clickable {
-                            selectedCategoryName = if (isSelected) null else cat.name
+                            selectedCategoryName = if (isSelected) null else slice.category.name
                         }
-                        .padding(horizontal = 8.dp, vertical = 6.dp)
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 modifier = Modifier
-                                    .size(12.dp)
+                                    .size(10.dp)
                                     .clip(CircleShape)
-                                    .background(cat.color)
+                                    .background(slice.category.color)
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                text = cat.name,
+                                text = slice.category.name,
                                 style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                         }
 
                         Text(
-                            text = "${currencySymbol}${String.format(Locale.US, "%,.2f", amt)} ($percent%)",
+                            text = "${currencySymbol}${String.format(Locale.US, "%,.2f", slice.amount)} (${slice.percentage}%)",
                             style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (isSelected) slice.category.color else MaterialTheme.colorScheme.primary
                         )
                     }
                 }

@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -59,13 +60,12 @@ import com.example.data.model.ExpenseEntity
 import com.example.ui.components.CategoryHelper
 import com.example.ui.components.CategoryPieChart
 import com.example.ui.components.MemberAvatar
-import com.example.ui.theme.FamDanger
-import com.example.ui.theme.FamPrimary
 import com.example.ui.components.MemberShareEmptyState
 import com.example.ui.components.SpendingTrendChart
 import com.example.ui.components.parseColorHex
+import com.example.ui.theme.FamDanger
 import com.example.ui.theme.FamPrimary
-import com.example.ui.theme.FamPrimaryLight
+import com.example.ui.theme.FamSuccess
 import com.example.viewmodel.UiState
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -110,7 +110,6 @@ fun AnalyticsScreen(
                 uiState.expenses.filter { it.timestamp in start..now }
             }
             else -> {
-                // Month
                 cal.set(Calendar.DAY_OF_MONTH, 1)
                 cal.set(Calendar.HOUR_OF_DAY, 0)
                 cal.set(Calendar.MINUTE, 0)
@@ -125,7 +124,7 @@ fun AnalyticsScreen(
         periodExpenses.sumOf { it.amount }
     }
 
-    // Filter incomes by selected time period (Step 7)
+    // Filter incomes by selected time period
     val periodIncomes = remember(uiState.incomes, selectedPeriod) {
         val cal = Calendar.getInstance()
         val now = cal.timeInMillis
@@ -147,7 +146,6 @@ fun AnalyticsScreen(
                 uiState.incomes.filter { it.date in start..now }
             }
             else -> {
-                // Month
                 cal.set(Calendar.DAY_OF_MONTH, 1)
                 cal.set(Calendar.HOUR_OF_DAY, 0)
                 cal.set(Calendar.MINUTE, 0)
@@ -196,8 +194,8 @@ fun AnalyticsScreen(
             .testTag("analytics_screen"),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)
     ) {
-        item {
-            // Header with Export button (Fix 2f)
+        // Virtualized Item 1: Header
+        item(key = "analytics_header") {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -207,7 +205,7 @@ fun AnalyticsScreen(
                     Text(
                         text = "Analytics & Reports",
                         style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.Black,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
@@ -230,8 +228,10 @@ fun AnalyticsScreen(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+        }
 
-            // Time Period Toggle (Fix 2a)
+        // Virtualized Item 2: Period Toggle
+        item(key = "analytics_period_toggle") {
             SingleChoiceSegmentedButtonRow(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -251,18 +251,20 @@ fun AnalyticsScreen(
                     ) {
                         Text(
                             text = period,
-                            fontWeight = if (selectedPeriod == period) FontWeight.Bold else FontWeight.Normal
+                            fontWeight = if (selectedPeriod == period) FontWeight.ExtraBold else FontWeight.SemiBold
                         )
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+        }
 
-            // Fix 2e: Purple banner ONLY shown when ZERO data exists
-            if (!hasAnyExpenses) {
+        // Empty state banner if no expenses
+        if (!hasAnyExpenses) {
+            item(key = "empty_insights_banner") {
                 Card(
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(18.dp),
                     colors = CardDefaults.cardColors(containerColor = FamPrimary),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -309,18 +311,21 @@ fun AnalyticsScreen(
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }
+        }
 
-            // STEP 7: Income vs Expenses Card (Side-by-side bars + Net Savings)
+        // Virtualized Item 3: Income vs Expenses Card
+        item(key = "income_vs_expenses") {
             IncomeVsExpensesCard(
                 totalIncome = totalIncome,
                 totalExpenses = totalSpent,
                 currencySymbol = uiState.currencySymbol,
                 period = selectedPeriod
             )
-
             Spacer(modifier = Modifier.height(20.dp))
+        }
 
-            // Fix 2b: Spending Trend Chart with Spikes and Daily Spend
+        // Virtualized Item 4: Spending Trend Chart
+        item(key = "spending_trend_chart") {
             SpendingTrendChart(
                 expenses = periodExpenses,
                 currencySymbol = uiState.currencySymbol,
@@ -328,10 +333,11 @@ fun AnalyticsScreen(
                 budgetLimit = uiState.monthlyBudgetLimit,
                 onAddExpenseClick = onAddExpenseClick
             )
-
             Spacer(modifier = Modifier.height(20.dp))
+        }
 
-            // Fix 2c: Spending Share by Member (Horizontal Bar Chart)
+        // Virtualized Item 5: Member Breakdown
+        item(key = "member_share_section") {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -351,8 +357,9 @@ fun AnalyticsScreen(
             Spacer(modifier = Modifier.height(10.dp))
 
             Card(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -374,10 +381,8 @@ fun AnalyticsScreen(
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        onMemberClick?.invoke(member.id)
-                                    }
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable { onMemberClick?.invoke(member.id) }
                                     .padding(vertical = 4.dp)
                             ) {
                                 Row(
@@ -393,13 +398,13 @@ fun AnalyticsScreen(
                                             name = member.name,
                                             colorHex = member.avatarColorHex,
                                             iconName = member.avatarIcon,
-                                            size = 28.dp
+                                            size = 30.dp
                                         )
-                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Spacer(modifier = Modifier.width(10.dp))
                                         Text(
                                             text = member.name,
                                             style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.SemiBold
+                                            fontWeight = FontWeight.Bold
                                         )
                                     }
 
@@ -407,7 +412,7 @@ fun AnalyticsScreen(
                                         Text(
                                             text = "${uiState.currencySymbol}${String.format(Locale.US, "%,.2f", spent)} (${pctInt}%)",
                                             style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Bold,
+                                            fontWeight = FontWeight.ExtraBold,
                                             color = FamPrimary
                                         )
                                         Spacer(modifier = Modifier.width(4.dp))
@@ -438,8 +443,10 @@ fun AnalyticsScreen(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
+        }
 
-            // Fix 2d: Category Distribution (Donut Chart with Legend and Summary Card)
+        // Virtualized Item 6: Category Distribution Donut Chart
+        item(key = "category_distribution_section") {
             Text(
                 text = "Category Distribution",
                 style = MaterialTheme.typography.titleMedium,
@@ -448,32 +455,33 @@ fun AnalyticsScreen(
             Spacer(modifier = Modifier.height(10.dp))
 
             Card(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 16.dp)
+                        .padding(vertical = 18.dp)
                 ) {
                     CategoryPieChart(
                         categorySums = categorySums,
                         totalSpent = totalSpent,
                         currencySymbol = uiState.currencySymbol,
-                        periodLabel = selectedPeriod.lowercase(Locale.getDefault()),
+                        periodLabel = selectedPeriod.lowercase(),
                         expenses = periodExpenses,
                         onAddExpenseClick = onAddExpenseClick
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(96.dp))
         }
     }
 
-    // Fix 2f: Export Bottom Sheet
+    // Export Options Modal Bottom Sheet
     if (showExportSheet) {
         ModalBottomSheet(
             onDismissRequest = { showExportSheet = false },
@@ -483,68 +491,28 @@ fun AnalyticsScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 16.dp)
+                    .padding(24.dp)
             ) {
                 Text(
-                    text = "Export Spending Report",
+                    text = "Export & Reports",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Choose your preferred export format for $selectedPeriod",
+                    text = "Choose a format to export family expense data",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // PDF Option
+                // CSV Export Option
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(14.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable {
-                            scope.launch { exportSheetState.hide() }.invokeOnCompletion {
-                                showExportSheet = false
-                                Toast.makeText(context, "Export feature coming soon!", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                        .padding(16.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Description,
-                            contentDescription = "PDF",
-                            tint = FamDanger,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = "Export as PDF",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "Clean formatted document with spending charts & summaries",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // CSV Option
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(14.dp))
                         .clickable {
                             scope.launch { exportSheetState.hide() }.invokeOnCompletion {
                                 showExportSheet = false
@@ -553,22 +521,35 @@ fun AnalyticsScreen(
                         }
                         .padding(16.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.TableChart,
-                            contentDescription = "CSV",
-                            tint = FamPrimary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(FamPrimary.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.TableChart,
+                                contentDescription = null,
+                                tint = FamPrimary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Export as CSV",
+                                text = "Export CSV",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Structured spreadsheet compatible with Excel and Google Sheets",
+                                text = "Formatted table compatible with Excel and Google Sheets",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -576,7 +557,7 @@ fun AnalyticsScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 // Cancel Option
                 Surface(
@@ -628,12 +609,13 @@ fun IncomeVsExpensesCard(
 ) {
     val netSavings = totalIncome - totalExpenses
     val maxVal = maxOf(totalIncome, totalExpenses, 1.0)
-    val incomeFraction = (totalIncome / maxVal).toFloat().coerceIn(0.04f, 1f)
-    val expenseFraction = (totalExpenses / maxVal).toFloat().coerceIn(0.04f, 1f)
+    val incomeFraction = (totalIncome / maxVal).toFloat().coerceIn(0.06f, 1f)
+    val expenseFraction = (totalExpenses / maxVal).toFloat().coerceIn(0.06f, 1f)
 
     Card(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         modifier = Modifier
             .fillMaxWidth()
@@ -642,7 +624,7 @@ fun IncomeVsExpensesCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(18.dp)
+                .padding(20.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -655,11 +637,18 @@ fun IncomeVsExpensesCard(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                Text(
-                    text = "This $period",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Text(
+                        text = "This $period",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(18.dp))
@@ -672,7 +661,7 @@ fun IncomeVsExpensesCard(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.Bottom
             ) {
-                // Total Income Column (Green)
+                // Total Income Column (Emerald Green)
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.weight(1f)
@@ -680,27 +669,27 @@ fun IncomeVsExpensesCard(
                     Text(
                         text = "${currencySymbol}${String.format(Locale.US, "%,.0f", totalIncome)}",
                         style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF16A34A)
+                        fontWeight = FontWeight.ExtraBold,
+                        color = FamSuccess
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Box(
                         modifier = Modifier
-                            .width(48.dp)
+                            .width(52.dp)
                             .height((84 * incomeFraction).dp)
-                            .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
-                            .background(Color(0xFF22C55E))
+                            .clip(RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))
+                            .background(FamSuccess)
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Income",
                         style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
-                // Total Expenses Column (Red/FamDanger)
+                // Total Expenses Column (Coral Red)
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.weight(1f)
@@ -708,22 +697,22 @@ fun IncomeVsExpensesCard(
                     Text(
                         text = "${currencySymbol}${String.format(Locale.US, "%,.0f", totalExpenses)}",
                         style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.ExtraBold,
                         color = FamDanger
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Box(
                         modifier = Modifier
-                            .width(48.dp)
+                            .width(52.dp)
                             .height((84 * expenseFraction).dp)
-                            .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                            .clip(RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))
                             .background(FamDanger)
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Expenses",
                         style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -731,7 +720,7 @@ fun IncomeVsExpensesCard(
 
             Spacer(modifier = Modifier.height(16.dp))
             HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
                 thickness = 1.dp
             )
             Spacer(modifier = Modifier.height(12.dp))
@@ -753,10 +742,9 @@ fun IncomeVsExpensesCard(
                         "${currencySymbol}${String.format(Locale.US, "%,.2f", netSavings)}",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.ExtraBold,
-                    color = if (netSavings >= 0) Color(0xFF16A34A) else FamDanger
+                    color = if (netSavings >= 0) FamSuccess else FamDanger
                 )
             }
         }
     }
 }
-

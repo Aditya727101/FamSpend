@@ -12,49 +12,49 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Color(0xFF8B6BFF),
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFF4524A6),
-    onPrimaryContainer = Color(0xFFEDE9FF),
+    primary = Color(0xFF818CF8), // Radiant Indigo
+    onPrimary = Color(0xFF0F172A),
+    primaryContainer = Color(0xFF312E81),
+    onPrimaryContainer = Color(0xFFEEF2FF),
     secondary = FamSuccess,
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFF1B5E20),
-    onSecondaryContainer = Color(0xFFC8E6C9),
+    onSecondary = Color(0xFF0F172A),
+    secondaryContainer = Color(0xFF064E3B),
+    onSecondaryContainer = Color(0xFFD1FAE5),
     tertiary = FamWarning,
-    onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFE65100),
-    onTertiaryContainer = Color(0xFFFFE0B2),
-    background = Color(0xFF13111C),
-    surface = Color(0xFF1E1A2E),
-    surfaceVariant = Color(0xFF2A253D),
-    onBackground = Color(0xFFF8F7FF),
-    onSurface = Color(0xFFF8F7FF),
-    onSurfaceVariant = Color(0xFFBDB8D6),
-    outline = Color(0xFF423B5C),
+    onTertiary = Color(0xFF0F172A),
+    tertiaryContainer = Color(0xFF78350F),
+    onTertiaryContainer = Color(0xFFFEF3C7),
+    background = FamDarkBackground,
+    surface = FamDarkSurface,
+    surfaceVariant = FamDarkSurfaceVariant,
+    onBackground = FamDarkTextPrimary,
+    onSurface = FamDarkTextPrimary,
+    onSurfaceVariant = FamDarkTextSecondary,
+    outline = FamDarkBorder,
     error = FamDanger
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = FamPrimary, // #5C35D4
+    primary = FamPrimary, // #4F46E5
     onPrimary = Color.White,
-    primaryContainer = FamPrimaryLight, // #EDE9FF
+    primaryContainer = FamPrimaryLight, // #EEF2FF
     onPrimaryContainer = FamPrimary,
-    secondary = FamSuccess, // #4CAF50
+    secondary = FamSuccess, // #10B981
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFE8F5E9),
-    onSecondaryContainer = Color(0xFF2E7D32),
-    tertiary = FamWarning, // #FF9800
+    secondaryContainer = FamSuccessLight,
+    onSecondaryContainer = FamSuccessDark,
+    tertiary = FamWarning, // #F59E0B
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFFFF3E0),
-    onTertiaryContainer = Color(0xFFE65100),
-    background = FamBackground, // #F8F7FF
+    tertiaryContainer = FamWarningLight,
+    onTertiaryContainer = Color(0xFFB45309),
+    background = FamBackground, // #F8FAFC
     surface = FamCardBackground, // #FFFFFF
-    surfaceVariant = Color(0xFFF3F1FA),
-    onBackground = FamTextPrimary, // #1A1A2E
-    onSurface = FamTextPrimary, // #1A1A2E
-    onSurfaceVariant = FamTextSecondary, // #6B7280
-    outline = FamBorder, // #E5E7EB
-    error = FamDanger // #F44336
+    surfaceVariant = Color(0xFFF1F5F9), // Slate 100
+    onBackground = FamTextPrimary, // #0F172A
+    onSurface = FamTextPrimary, // #0F172A
+    onSurfaceVariant = FamTextSecondary, // #64748B
+    outline = FamBorder, // #E2E8F0
+    error = FamDanger // #EF4444
 )
 
 @Composable
