@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -50,19 +51,20 @@ fun BudgetAlertBanner(
     onEditBudgetClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    if (notification == null || isDismissed || notification.level == BudgetAlertLevel.NONE) return
+    val isVisible = notification != null && !isDismissed && notification.level != BudgetAlertLevel.NONE
 
-    val is100Percent = notification.level == BudgetAlertLevel.EXCEEDED_100
+    val is100Percent = notification?.level == BudgetAlertLevel.EXCEEDED_100
 
     val containerColor = if (is100Percent) MaterialTheme.colorScheme.errorContainer else Color(0xFFFFF3E0)
     val contentColor = if (is100Percent) MaterialTheme.colorScheme.onErrorContainer else Color(0xFFE65100)
     val iconColor = if (is100Percent) MaterialTheme.colorScheme.error else Color(0xFFF57C00)
 
     AnimatedVisibility(
-        visible = true,
+        visible = isVisible,
         enter = fadeIn(),
         exit = fadeOut()
     ) {
+        if (notification != null) {
         Card(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = containerColor),
@@ -116,14 +118,14 @@ fun BudgetAlertBanner(
                     IconButton(
                         onClick = onDismiss,
                         modifier = Modifier
-                            .size(28.dp)
+                            .size(36.dp)
                             .testTag("dismiss_budget_alert_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Dismiss Alert",
                             tint = contentColor.copy(alpha = 0.7f),
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
@@ -141,7 +143,7 @@ fun BudgetAlertBanner(
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = contentColor
                         ),
-                        modifier = Modifier.height(34.dp)
+                        modifier = Modifier.heightIn(min = 36.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Edit,
@@ -151,12 +153,13 @@ fun BudgetAlertBanner(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "Adjust Monthly Budget",
-                            fontSize = 12.sp,
+                            style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold
                         )
                     }
                 }
             }
+        }
         }
     }
 }

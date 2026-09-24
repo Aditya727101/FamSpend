@@ -12,6 +12,6 @@ data class FamilyMemberEntity(
     val avatarColorHex: String, // e.g. "#3F51B5"
     val avatarIcon: String = "person", // person, face, star, favorite, etc.
     val isCurrentActiveUser: Boolean = false,
-    val householdId: String = "FAM-7892-OAK",
+    val householdId: String = "FAM-1001",
     val monthlyContributionGoal: Double = 0.0
 )

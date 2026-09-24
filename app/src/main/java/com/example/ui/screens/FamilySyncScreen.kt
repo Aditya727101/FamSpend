@@ -53,6 +53,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import com.example.ui.theme.FamPrimary
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -299,7 +300,7 @@ fun FamilySyncScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Current Active Symbol: ${uiState.currencySymbol}",
+                            text = "Current active symbol: ${uiState.currencySymbol}",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -401,11 +402,50 @@ fun FamilySyncScreen(
             ) {
                 Icon(imageVector = Icons.Default.Add, contentDescription = "Add Member", modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Add")
+                Text(if (uiState.members.isEmpty()) "Invite Your First Member" else "Add Member")
             }
         }
 
         Spacer(modifier = Modifier.height(10.dp))
+
+        if (uiState.members.isEmpty()) {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "👨‍👩‍👧‍👦",
+                        style = MaterialTheme.typography.headlineMedium
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "No family members yet!",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Invite family members to share expenses, split bills, and track budgets together.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = onAddMemberClick,
+                        colors = ButtonDefaults.buttonColors(containerColor = FamPrimary),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Invite Your First Member")
+                    }
+                }
+            }
+        }
 
         Column(
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -479,13 +519,14 @@ fun FamilySyncScreen(
                                     onClick = { onSwitchActiveMember(member.id) },
                                     shape = RoundedCornerShape(10.dp)
                                 ) {
-                                    Text("Switch To")
+                                    Text("Switch")
                                 }
                             } else {
                                 Icon(
                                     imageVector = Icons.Default.Check,
                                     contentDescription = "Active",
-                                    tint = MaterialTheme.colorScheme.primary
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
                         }
@@ -567,7 +608,7 @@ fun FamilySyncScreen(
                 ) {
                     Icon(imageVector = Icons.Default.DeleteForever, contentDescription = "Clear All Data", modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Clear Whole App Data", fontWeight = FontWeight.Bold)
+                    Text("Clear All App Data", fontWeight = FontWeight.Bold)
                 }
             }
         }

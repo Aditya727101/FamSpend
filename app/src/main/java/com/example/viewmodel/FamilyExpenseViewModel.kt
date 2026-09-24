@@ -5,11 +5,13 @@ import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.AppDatabase
+import com.example.data.AuthManager
 import com.example.data.ExpenseRepository
 import com.example.data.model.CategoryBudgetEntity
 import com.example.data.model.ExpenseEntity
 import com.example.data.model.FamilyMemberEntity
 import com.example.data.model.HouseholdEntity
+import com.example.data.model.IncomeEntity
 import com.example.data.sync.FirestoreSyncManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -44,9 +46,12 @@ data class UiState(
     val householdId: String = "FAM-1001",
     val householdName: String = "My Household",
     val inviteCode: String = "FAM-1001",
-    val currencySymbol: String = "$",
+    val currencySymbol: String = "₹",
     val expenses: List<ExpenseEntity> = emptyList(),
     val filteredExpenses: List<ExpenseEntity> = emptyList(),
+    val incomes: List<IncomeEntity> = emptyList(),
+    val totalIncomeThisMonth: Double = 0.0,
+    val transactionTypeFilter: String = "All", // "All", "Expenses", "Income"
     val members: List<FamilyMemberEntity> = emptyList(),
     val activeMember: FamilyMemberEntity? = null,
     val categoryBudgets: List<CategoryBudgetEntity> = emptyList(),
@@ -54,6 +59,7 @@ data class UiState(
     val selectedCategoryFilter: String? = null,
     val selectedMemberFilter: String? = null,
     val selectedDateRangeFilter: String? = null,
+    val selectedPaymentMethodFilter: String? = null,
     val searchQuery: String = "",
     val isSyncing: Boolean = false,
     val isLiveSyncEnabled: Boolean = true,
@@ -67,6 +73,9 @@ data class UiState(
     val isBudgetAlertDismissed: Boolean = false,
     val lastNotifiedThreshold: Int = 0,
     val isAddExpenseDialogOpen: Boolean = false,
+    val isAddIncomeDialogOpen: Boolean = false,
+    val incomeSuccessToast: String? = null,
+    val isFabMenuOpen: Boolean = false,
     val isAddMemberDialogOpen: Boolean = false,
     val isEditBudgetDialogOpen: Boolean = false,
     val isJoinHouseholdDialogOpen: Boolean = false,
@@ -75,14 +84,18 @@ data class UiState(
     val isExportCsvDialogOpen: Boolean = false,
     val isEditMemberDialogOpen: Boolean = false,
     val editingExpense: ExpenseEntity? = null,
+    val viewingExpense: ExpenseEntity? = null,
     val editingMember: FamilyMemberEntity? = null,
-    val isDarkMode: Boolean = false
+    val isDarkMode: Boolean = false,
+    val selectedExpenseIds: Set<String> = emptySet()
 )
 
 class FamilyExpenseViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: ExpenseRepository
     private val firestoreSyncManager: FirestoreSyncManager
+    private val authManager: AuthManager = AuthManager()
+    private var isFirebaseAuthenticated = false
     private val prefs = application.getSharedPreferences("fam_spend_prefs", Context.MODE_PRIVATE)
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
@@ -100,10 +113,26 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
             database.expenseDao(),
             database.familyMemberDao(),
             database.categoryBudgetDao(),
-            database.householdDao()
+            database.householdDao(),
+            database.incomeDao()
         )
         firestoreSyncManager = FirestoreSyncManager(application, repository)
-
+        
+        viewModelScope.launch {
+            authManager.currentUser.collect { user ->
+                if (user != null) {
+                    isFirebaseAuthenticated = true
+                    firestoreSyncManager.startRealtimeSync(_uiState.value.householdId) { logMsg ->
+                        addSyncLog(logMsg)
+                    }
+                } else {
+                    isFirebaseAuthenticated = false
+                    firestoreSyncManager.stopRealtimeSync()
+                    addSyncLog("Offline Mode: User not signed in.")
+                }
+            }
+        }
+        
         observeData()
 
         // Ensure weekly scheduled review reminder is initialized
@@ -121,8 +150,11 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
     private fun startObservingHousehold(hId: String) {
         observationJob?.cancel()
         observationJob = viewModelScope.launch(Dispatchers.IO) {
-            firestoreSyncManager.startRealtimeSync(hId) { logMsg ->
-                addSyncLog(logMsg)
+            firestoreSyncManager.stopRealtimeSync()
+            if (isFirebaseAuthenticated) {
+                firestoreSyncManager.startRealtimeSync(hId) { logMsg ->
+                    addSyncLog(logMsg)
+                }
             }
 
             launch {
@@ -158,19 +190,29 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
 
             launch {
                 repository.getExpenses(hId).collect { expensesList ->
-                    val now = System.currentTimeMillis()
-                    val sdfDay = SimpleDateFormat("yyyyMMdd", Locale.getDefault())
-                    val sdfMonth = SimpleDateFormat("yyyyMM", Locale.getDefault())
-                    val todayStr = sdfDay.format(Date(now))
-                    val monthStr = sdfMonth.format(Date(now))
+                    val cal = Calendar.getInstance()
+                    cal.timeInMillis = System.currentTimeMillis()
+                    cal.set(Calendar.HOUR_OF_DAY, 0)
+                    cal.set(Calendar.MINUTE, 0)
+                    cal.set(Calendar.SECOND, 0)
+                    cal.set(Calendar.MILLISECOND, 0)
+                    val startOfDay = cal.timeInMillis
 
-                    val spentToday = expensesList
-                        .filter { sdfDay.format(Date(it.timestamp)) == todayStr }
-                        .sumOf { it.amount }
+                    cal.set(Calendar.DAY_OF_MONTH, 1)
+                    val startOfMonth = cal.timeInMillis
 
-                    val spentMonth = expensesList
-                        .filter { sdfMonth.format(Date(it.timestamp)) == monthStr }
-                        .sumOf { it.amount }
+                    var spentToday = 0.0
+                    var spentMonth = 0.0
+
+                    for (expense in expensesList) {
+                        val t = expense.timestamp
+                        if (t >= startOfMonth) {
+                            spentMonth += expense.amount
+                            if (t >= startOfDay) {
+                                spentToday += expense.amount
+                            }
+                        }
+                    }
 
                     _uiState.value = _uiState.value.copy(
                         expenses = expensesList,
@@ -181,6 +223,25 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
                     checkAndAutoCreateRecurringExpenses(expensesList)
                     checkBudgetAlerts(spentMonth, _uiState.value.monthlyBudgetLimit, _uiState.value.currencySymbol)
                     checkDailyBudgetAlert(spentToday, _uiState.value.dailySpendingLimit, _uiState.value.currencySymbol)
+                }
+            }
+
+            launch {
+                repository.getIncomes(hId).collect { incomesList ->
+                    val cal = Calendar.getInstance()
+                    cal.set(Calendar.DAY_OF_MONTH, 1)
+                    cal.set(Calendar.HOUR_OF_DAY, 0)
+                    cal.set(Calendar.MINUTE, 0)
+                    cal.set(Calendar.SECOND, 0)
+                    cal.set(Calendar.MILLISECOND, 0)
+                    val startOfMonth = cal.timeInMillis
+
+                    val monthIncome = incomesList.filter { it.date >= startOfMonth }.sumOf { it.amount }
+
+                    _uiState.value = _uiState.value.copy(
+                        incomes = incomesList,
+                        totalIncomeThisMonth = monthIncome
+                    )
                 }
             }
         }
@@ -198,30 +259,38 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
             list = list.filter { it.paidByMemberId == state.selectedMemberFilter }
         }
 
+        if (!state.selectedPaymentMethodFilter.isNullOrBlank()) {
+            list = list.filter { it.paymentMethod.equals(state.selectedPaymentMethodFilter, ignoreCase = true) }
+        }
+
         if (!state.selectedDateRangeFilter.isNullOrBlank()) {
             val now = System.currentTimeMillis()
             val cal = Calendar.getInstance()
+            cal.timeInMillis = now
             list = when (state.selectedDateRangeFilter) {
                 "TODAY" -> {
-                    val sdfDay = SimpleDateFormat("yyyyMMdd", Locale.getDefault())
-                    val todayStr = sdfDay.format(Date(now))
-                    list.filter { sdfDay.format(Date(it.timestamp)) == todayStr }
+                    cal.set(Calendar.HOUR_OF_DAY, 0)
+                    cal.set(Calendar.MINUTE, 0)
+                    cal.set(Calendar.SECOND, 0)
+                    cal.set(Calendar.MILLISECOND, 0)
+                    val startOfDay = cal.timeInMillis
+                    list.filter { it.timestamp >= startOfDay }
                 }
                 "WEEK" -> {
-                    cal.timeInMillis = now
-                    cal.add(Calendar.DAY_OF_YEAR, -7)
-                    val weekAgo = cal.timeInMillis
+                    val weekAgo = now - (7L * 24 * 60 * 60 * 1000)
                     list.filter { it.timestamp >= weekAgo }
                 }
                 "MONTH" -> {
-                    val sdfMonth = SimpleDateFormat("yyyyMM", Locale.getDefault())
-                    val monthStr = sdfMonth.format(Date(now))
-                    list.filter { sdfMonth.format(Date(it.timestamp)) == monthStr }
+                    cal.set(Calendar.DAY_OF_MONTH, 1)
+                    cal.set(Calendar.HOUR_OF_DAY, 0)
+                    cal.set(Calendar.MINUTE, 0)
+                    cal.set(Calendar.SECOND, 0)
+                    cal.set(Calendar.MILLISECOND, 0)
+                    val startOfMonth = cal.timeInMillis
+                    list.filter { it.timestamp >= startOfMonth }
                 }
                 "LAST_30_DAYS" -> {
-                    cal.timeInMillis = now
-                    cal.add(Calendar.DAY_OF_YEAR, -30)
-                    val thirtyDaysAgo = cal.timeInMillis
+                    val thirtyDaysAgo = now - (30L * 24 * 60 * 60 * 1000)
                     list.filter { it.timestamp >= thirtyDaysAgo }
                 }
                 else -> list
@@ -262,6 +331,11 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
         applyFilters()
     }
 
+    fun setPaymentMethodFilter(method: String?) {
+        _uiState.value = _uiState.value.copy(selectedPaymentMethodFilter = method)
+        applyFilters()
+    }
+
     fun switchActiveMember(memberId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.setActiveMember(_uiState.value.householdId, memberId)
@@ -282,7 +356,10 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
         note: String,
         isRecurring: Boolean = false,
         recurringFrequency: String = "Monthly",
-        recurringDayOfMonth: Int = 1
+        recurringDayOfMonth: Int = 1,
+        timestamp: Long = System.currentTimeMillis(),
+        receiptUri: String? = null,
+        tags: String = ""
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             val state = _uiState.value
@@ -291,6 +368,7 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
             if (editing != null) {
                 val updated = editing.copy(
                     amount = amount,
+                    currencySymbol = state.currencySymbol,
                     category = category,
                     description = description,
                     paidByMemberId = paidByMemberId,
@@ -301,38 +379,68 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
                     isRecurring = isRecurring,
                     recurringFrequency = recurringFrequency,
                     recurringDayOfMonth = recurringDayOfMonth,
-                    timestamp = System.currentTimeMillis()
+                    timestamp = timestamp,
+                    receiptUri = receiptUri ?: editing.receiptUri,
+                    tags = tags.ifBlank { editing.tags }
                 )
                 repository.updateExpense(updated)
                 firestoreSyncManager.syncExpenseToCloud(updated)
                 val recurringText = if (isRecurring) " [Recurring $recurringFrequency on Day $recurringDayOfMonth]" else ""
-                addSyncLog("Updated expense: ${description} ($${amount})${recurringText}")
+                addSyncLog("Updated expense: ${description} (${state.currencySymbol}${amount})${recurringText}")
             } else {
                 val newExp = ExpenseEntity(
                     amount = amount,
+                    currencySymbol = state.currencySymbol,
                     category = category,
                     description = description,
                     paidByMemberId = paidByMemberId,
                     paidByMemberName = paidByMemberName,
                     splitType = splitType,
-                    timestamp = System.currentTimeMillis(),
+                    timestamp = timestamp,
                     householdId = state.householdId,
                     paymentMethod = paymentMethod,
                     note = note,
                     isRecurring = isRecurring,
                     recurringFrequency = recurringFrequency,
-                    recurringDayOfMonth = recurringDayOfMonth
+                    recurringDayOfMonth = recurringDayOfMonth,
+                    receiptUri = receiptUri,
+                    tags = tags
                 )
                 repository.addExpense(newExp)
                 firestoreSyncManager.syncExpenseToCloud(newExp)
                 val recurringText = if (isRecurring) " [Recurring $recurringFrequency on Day $recurringDayOfMonth]" else ""
-                addSyncLog("Added expense: ${description} ($${amount}) by ${paidByMemberName}${recurringText}")
+                addSyncLog("Added expense: ${description} (${state.currencySymbol}${amount}) by ${paidByMemberName}${recurringText}")
             }
 
             _uiState.value = _uiState.value.copy(
                 isAddExpenseDialogOpen = false,
                 editingExpense = null
             )
+        }
+    }
+
+    fun duplicateExpense(expense: ExpenseEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val duplicate = expense.copy(
+                id = java.util.UUID.randomUUID().toString(),
+                description = "${expense.description} (Copy)",
+                timestamp = System.currentTimeMillis()
+            )
+            repository.addExpense(duplicate)
+            firestoreSyncManager.syncExpenseToCloud(duplicate)
+            addSyncLog("Duplicated expense: ${duplicate.description}")
+        }
+    }
+
+    fun toggleExpenseSettled(expense: ExpenseEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val updated = expense.copy(isSettled = !expense.isSettled)
+            repository.updateExpense(updated)
+            firestoreSyncManager.syncExpenseToCloud(updated)
+            _uiState.value = _uiState.value.copy(
+                viewingExpense = if (_uiState.value.viewingExpense?.id == expense.id) updated else _uiState.value.viewingExpense
+            )
+            addSyncLog("Marked expense as ${if (updated.isSettled) "Settled" else "Pending"}: ${expense.description}")
         }
     }
 
@@ -352,15 +460,23 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
         val sdfMonth = SimpleDateFormat("yyyyMM", Locale.getDefault())
         val currentMonthStr = sdfMonth.format(cal.time)
 
+        
         for (template in recurringTemplates) {
             val targetDay = template.recurringDayOfMonth.coerceIn(1, 31)
+            val templateMonthStr = sdfMonth.format(java.util.Date(template.timestamp))
+
+            // Do not auto-create if the template itself is for the current month (it acts as this month's instance)
+            if (templateMonthStr == currentMonthStr) continue
+            
+            // Do not auto-create if the template's first occurrence is in the future
+            if (template.timestamp > cal.timeInMillis) continue
 
             // Check if an auto-created instance of this expense already exists in the current month
             val alreadyCreatedThisMonth = expensesList.any { exp ->
                 exp.isAutoCreated &&
                 exp.description.equals(template.description, ignoreCase = true) &&
                 exp.category.equals(template.category, ignoreCase = true) &&
-                sdfMonth.format(Date(exp.timestamp)) == currentMonthStr
+                sdfMonth.format(java.util.Date(exp.timestamp)) == currentMonthStr
             }
 
             // Auto-create if not created yet and today is >= set day of month
@@ -403,6 +519,37 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    fun toggleExpenseSelection(expenseId: String) {
+        val currentSelected = _uiState.value.selectedExpenseIds
+        val newSelected = if (currentSelected.contains(expenseId)) {
+            currentSelected - expenseId
+        } else {
+            currentSelected + expenseId
+        }
+        _uiState.value = _uiState.value.copy(selectedExpenseIds = newSelected)
+    }
+
+    fun clearExpenseSelection() {
+        _uiState.value = _uiState.value.copy(selectedExpenseIds = emptySet())
+    }
+
+    fun deleteSelectedExpenses() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val selectedIds = _uiState.value.selectedExpenseIds
+            if (selectedIds.isEmpty()) return@launch
+
+            val expensesToDelete = _uiState.value.expenses.filter { it.id in selectedIds }
+            
+            expensesToDelete.forEach { expense ->
+                repository.deleteExpense(expense)
+                firestoreSyncManager.deleteExpenseFromCloud(expense)
+            }
+            
+            addSyncLog("Deleted ${expensesToDelete.size} selected expenses")
+            _uiState.value = _uiState.value.copy(selectedExpenseIds = emptySet())
+        }
+    }
+
     fun restoreExpense(expense: ExpenseEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.addExpense(expense)
@@ -434,6 +581,22 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
         addSyncLog("Switched app theme to ${if (newMode) "Dark" else "Light"} mode.")
     }
 
+    fun openViewExpenseDialog(expense: ExpenseEntity) {
+        _uiState.value = _uiState.value.copy(viewingExpense = expense)
+    }
+
+    fun closeViewExpenseDialog() {
+        _uiState.value = _uiState.value.copy(viewingExpense = null)
+    }
+
+    fun toggleFabMenu() {
+        _uiState.value = _uiState.value.copy(isFabMenuOpen = !_uiState.value.isFabMenuOpen)
+    }
+
+    fun closeFabMenu() {
+        _uiState.value = _uiState.value.copy(isFabMenuOpen = false)
+    }
+
     fun openAddExpenseDialog(expenseToEdit: ExpenseEntity? = null) {
         _uiState.value = _uiState.value.copy(
             isAddExpenseDialogOpen = true,
@@ -446,6 +609,72 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
             isAddExpenseDialogOpen = false,
             editingExpense = null
         )
+    }
+
+    fun openAddIncomeDialog() {
+        _uiState.value = _uiState.value.copy(isAddIncomeDialogOpen = true)
+    }
+
+    fun dismissAddIncomeDialog() {
+        _uiState.value = _uiState.value.copy(isAddIncomeDialogOpen = false)
+    }
+
+    fun clearIncomeSuccessToast() {
+        _uiState.value = _uiState.value.copy(incomeSuccessToast = null)
+    }
+
+    fun setTransactionTypeFilter(type: String) {
+        _uiState.value = _uiState.value.copy(transactionTypeFilter = type)
+    }
+
+    fun saveIncome(
+        amount: Double,
+        source: String,
+        category: String,
+        date: Long,
+        receivedBy: String,
+        receivedByName: String,
+        paymentMethod: String,
+        isRecurring: Boolean,
+        recurringFrequency: String?,
+        recurringStartDate: Long?,
+        note: String?
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val state = _uiState.value
+            val income = IncomeEntity(
+                amount = amount,
+                source = source,
+                category = category,
+                date = date,
+                receivedBy = receivedBy,
+                receivedByName = receivedByName,
+                paymentMethod = paymentMethod,
+                isRecurring = isRecurring,
+                recurringFrequency = recurringFrequency,
+                recurringStartDate = recurringStartDate,
+                note = note,
+                householdId = state.householdId,
+                currencySymbol = state.currencySymbol
+            )
+            repository.addIncome(income)
+            addSyncLog("Added income: $source (${state.currencySymbol}${String.format(Locale.US, "%,.2f", amount)}) received by $receivedByName")
+
+            _uiState.value = _uiState.value.copy(
+                isAddIncomeDialogOpen = false,
+                incomeSuccessToast = "✓ Income of ${state.currencySymbol}${String.format(Locale.US, "%,.2f", amount)} logged successfully!"
+            )
+
+            delay(2500)
+            _uiState.value = _uiState.value.copy(incomeSuccessToast = null)
+        }
+    }
+
+    fun deleteIncome(income: IncomeEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.deleteIncome(income)
+            addSyncLog("Deleted income: ${income.source}")
+        }
     }
 
     fun openAddMemberDialog() {
@@ -647,7 +876,7 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun updateCurrencySymbol(newSymbol: String) {
-        val cleanSymbol = newSymbol.trim().ifBlank { "$" }
+        val cleanSymbol = newSymbol.trim().ifBlank { "₹" }
         _uiState.value = _uiState.value.copy(
             currencySymbol = cleanSymbol,
             isCurrencySettingsDialogOpen = false
@@ -819,5 +1048,16 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
 
     private fun startPeriodicSyncSimulation() {
         // Disabled background simulation so no random expenses are added automatically.
+    }
+
+    fun signInWithGoogle(context: android.content.Context) {
+        viewModelScope.launch {
+            val result = authManager.signInWithGoogle(context)
+            if (result.isSuccess) {
+                addSyncLog("Successfully signed in with Google")
+            } else {
+                addSyncLog("Failed to sign in with Google: ${result.exceptionOrNull()?.message}")
+            }
+        }
     }
 }

@@ -27,7 +27,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.Button
@@ -64,7 +64,7 @@ import java.util.Locale
 fun ExportCsvDialog(
     expenses: List<ExpenseEntity>,
     householdName: String = "Household",
-    currencySymbol: String = "$",
+    currencySymbol: String = "₹",
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -115,7 +115,7 @@ fun ExportCsvDialog(
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.TableChart,
-                                    contentDescription = "Export CSV",
+                                    contentDescription = "Export Report",
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(22.dp)
                                 )
@@ -124,7 +124,7 @@ fun ExportCsvDialog(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Export Month CSV",
+                                text = "Export Monthly Report",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -208,7 +208,7 @@ fun ExportCsvDialog(
 
                 // CSV Data Code Preview Box
                 Text(
-                    text = "CSV Preview",
+                    text = "Report Preview",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -271,7 +271,7 @@ fun ExportCsvDialog(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Export & Share CSV File",
+                            text = "Export & Share Text Report",
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -281,7 +281,7 @@ fun ExportCsvDialog(
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             val clip = ClipData.newPlainText("Expenses CSV", csvString)
                             clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, "CSV copied to clipboard!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Report copied to clipboard!", Toast.LENGTH_SHORT).show()
                         },
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
@@ -294,7 +294,7 @@ fun ExportCsvDialog(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "Copy CSV to Clipboard")
+                        Text(text = "Copy Text to Clipboard")
                     }
                 }
             }

@@ -18,11 +18,11 @@ class WeeklyBudgetReminderWorker(
     override suspend fun doWork(): Result {
         return try {
             val db = AppDatabase.getDatabase(context)
-            val defaultHouseholdId = "FAM-7892-OAK"
+            val defaultHouseholdId = "FAM-1001"
             val household = db.householdDao().getHouseholdById(defaultHouseholdId).firstOrNull()
             
-            val totalBudget = household?.totalMonthlyBudget ?: 3200.0
-            val currencySymbol = household?.defaultCurrency ?: "$"
+            val totalBudget = household?.totalMonthlyBudget ?: 3000.0
+            val currencySymbol = household?.defaultCurrency ?: "₹"
 
             val expenses = db.expenseDao().getExpensesByHousehold(defaultHouseholdId).firstOrNull() ?: emptyList()
 

@@ -9,10 +9,12 @@ import com.example.data.dao.CategoryBudgetDao
 import com.example.data.dao.ExpenseDao
 import com.example.data.dao.FamilyMemberDao
 import com.example.data.dao.HouseholdDao
+import com.example.data.dao.IncomeDao
 import com.example.data.model.CategoryBudgetEntity
 import com.example.data.model.ExpenseEntity
 import com.example.data.model.FamilyMemberEntity
 import com.example.data.model.HouseholdEntity
+import com.example.data.model.IncomeEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -22,9 +24,10 @@ import kotlinx.coroutines.launch
         ExpenseEntity::class,
         FamilyMemberEntity::class,
         CategoryBudgetEntity::class,
-        HouseholdEntity::class
+        HouseholdEntity::class,
+        IncomeEntity::class
     ],
-    version = 3,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -33,6 +36,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun familyMemberDao(): FamilyMemberDao
     abstract fun categoryBudgetDao(): CategoryBudgetDao
     abstract fun householdDao(): HouseholdDao
+    abstract fun incomeDao(): IncomeDao
 
     companion object {
         @Volatile
@@ -69,7 +73,7 @@ abstract class AppDatabase : RoomDatabase() {
                     householdId = householdId,
                     householdName = "My Household",
                     inviteCode = "FAM-1001",
-                    defaultCurrency = "$",
+                    defaultCurrency = "₹",
                     totalMonthlyBudget = 3000.0,
                     lastSyncedTimestamp = System.currentTimeMillis(),
                     isLiveSyncEnabled = true

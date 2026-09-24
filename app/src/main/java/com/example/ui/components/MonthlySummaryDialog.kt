@@ -22,13 +22,13 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.PieChart
-import androidx.compose.material.icons.filled.ReceiptLong
-import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -59,7 +59,7 @@ fun MonthlySummaryDialog(
     expenses: List<ExpenseEntity>,
     members: List<FamilyMemberEntity>,
     monthlyBudgetLimit: Double,
-    currencySymbol: String = "$",
+    currencySymbol: String = "₹",
     onDismiss: () -> Unit,
     onExportCsvClick: () -> Unit = {}
 ) {
@@ -391,7 +391,7 @@ fun MonthlySummaryDialog(
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
-                Divider()
+                HorizontalDivider()
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Family Member Contribution Breakdown
@@ -457,11 +457,11 @@ fun MonthlySummaryDialog(
                     ) {
                         Icon(
                             imageVector = Icons.Default.FileDownload,
-                            contentDescription = "Export CSV",
+                            contentDescription = "Export Report",
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Export Current Month CSV", fontWeight = FontWeight.Bold)
+                        Text("Export Monthly Report", fontWeight = FontWeight.Bold)
                     }
 
                     OutlinedButton(

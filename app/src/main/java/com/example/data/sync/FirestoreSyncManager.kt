@@ -95,6 +95,7 @@ class FirestoreSyncManager(
     fun isOnline(): Boolean = isNetworkAvailable
 
     fun startRealtimeSync(householdId: String, onSyncLog: (String) -> Unit) {
+        if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser == null) return
         syncLogCallback = onSyncLog
         if (currentHouseholdId == householdId && expenseListenerRegistration != null) return
 
@@ -130,55 +131,65 @@ class FirestoreSyncManager(
                         Log.d("FirestoreSyncManager", "Local changes waiting to sync to cloud once connection is online.")
                     }
 
-                    for (dc in snapshot.documentChanges) {
-                        val doc = dc.document
-                        val id = doc.id
-                        val amount = doc.getDouble("amount") ?: 0.0
-                        val category = doc.getString("category") ?: "General"
-                        val description = doc.getString("description") ?: "Expense"
-                        val paidByMemberId = doc.getString("paidByMemberId") ?: ""
-                        val paidByMemberName = doc.getString("paidByMemberName") ?: "Family Member"
-                        val splitType = doc.getString("splitType") ?: "Split Equally"
-                        val timestamp = doc.getLong("timestamp") ?: System.currentTimeMillis()
-                        val paymentMethod = doc.getString("paymentMethod") ?: "Credit Card"
-                        val note = doc.getString("note") ?: ""
-                        val currencySymbol = doc.getString("currencySymbol") ?: "$"
-                        val isRecurring = doc.getBoolean("isRecurring") ?: false
-                        val recurringFrequency = doc.getString("recurringFrequency") ?: "Monthly"
-                        val recurringDayOfMonth = doc.getLong("recurringDayOfMonth")?.toInt() ?: 1
-                        val isAutoCreated = doc.getBoolean("isAutoCreated") ?: false
+                    scope.launch {
+                        val toAdd = mutableListOf<ExpenseEntity>()
+                        val toRemove = mutableListOf<String>()
 
-                        val entity = ExpenseEntity(
-                            id = id,
-                            amount = amount,
-                            currencySymbol = currencySymbol,
-                            category = category,
-                            description = description,
-                            paidByMemberId = paidByMemberId,
-                            paidByMemberName = paidByMemberName,
-                            splitType = splitType,
-                            timestamp = timestamp,
-                            householdId = householdId,
-                            paymentMethod = paymentMethod,
-                            note = note,
-                            isRecurring = isRecurring,
-                            recurringFrequency = recurringFrequency,
-                            recurringDayOfMonth = recurringDayOfMonth,
-                            isAutoCreated = isAutoCreated
-                        )
+                        for (dc in snapshot.documentChanges) {
+                            val doc = dc.document
+                            val id = doc.id
+                            val amount = doc.getDouble("amount") ?: 0.0
+                            val category = doc.getString("category") ?: "General"
+                            val description = doc.getString("description") ?: "Expense"
+                            val paidByMemberId = doc.getString("paidByMemberId") ?: ""
+                            val paidByMemberName = doc.getString("paidByMemberName") ?: "Family Member"
+                            val splitType = doc.getString("splitType") ?: "Split Equally"
+                            val timestamp = doc.getLong("timestamp") ?: System.currentTimeMillis()
+                            val paymentMethod = doc.getString("paymentMethod") ?: "Credit Card"
+                            val note = doc.getString("note") ?: ""
+                            val currencySymbol = doc.getString("currencySymbol") ?: "₹"
+                            val isRecurring = doc.getBoolean("isRecurring") ?: false
+                            val recurringFrequency = doc.getString("recurringFrequency") ?: "Monthly"
+                            val recurringDayOfMonth = doc.getLong("recurringDayOfMonth")?.toInt() ?: 1
+                            val isAutoCreated = doc.getBoolean("isAutoCreated") ?: false
+                            val isSettled = doc.getBoolean("isSettled") ?: false
+                            val receiptUri = doc.getString("receiptUri")
+                            val tags = doc.getString("tags") ?: ""
 
-                        when (dc.type) {
-                            DocumentChange.Type.ADDED, DocumentChange.Type.MODIFIED -> {
-                                scope.launch {
-                                    repository.addExpense(entity)
+                            val entity = ExpenseEntity(
+                                id = id,
+                                amount = amount,
+                                currencySymbol = currencySymbol,
+                                category = category,
+                                description = description,
+                                paidByMemberId = paidByMemberId,
+                                paidByMemberName = paidByMemberName,
+                                splitType = splitType,
+                                timestamp = timestamp,
+                                householdId = householdId,
+                                paymentMethod = paymentMethod,
+                                note = note,
+                                isRecurring = isRecurring,
+                                recurringFrequency = recurringFrequency,
+                                recurringDayOfMonth = recurringDayOfMonth,
+                                isAutoCreated = isAutoCreated,
+                                isSettled = isSettled,
+                                receiptUri = receiptUri,
+                                tags = tags
+                            )
+
+                            when (dc.type) {
+                                DocumentChange.Type.ADDED, DocumentChange.Type.MODIFIED -> {
+                                    toAdd.add(entity)
                                 }
-                            }
-                            DocumentChange.Type.REMOVED -> {
-                                scope.launch {
-                                    repository.deleteExpenseById(id, householdId)
+                                DocumentChange.Type.REMOVED -> {
+                                    toRemove.add(id)
                                 }
                             }
                         }
+
+                        if (toAdd.isNotEmpty()) repository.addExpenses(toAdd)
+                        toRemove.forEach { repository.deleteExpenseById(it, householdId) }
                     }
                 }
             }
@@ -194,39 +205,43 @@ class FirestoreSyncManager(
                 }
 
                 if (snapshot != null) {
-                    for (dc in snapshot.documentChanges) {
-                        val doc = dc.document
-                        val id = doc.id
-                        val name = doc.getString("name") ?: "Member"
-                        val role = doc.getString("role") ?: "Parent"
-                        val avatarColorHex = doc.getString("avatarColorHex") ?: "#1E88E5"
-                        val avatarIcon = doc.getString("avatarIcon") ?: "person"
-                        val isCurrentActiveUser = doc.getBoolean("isCurrentActiveUser") ?: false
-                        val monthlyContributionGoal = doc.getDouble("monthlyContributionGoal") ?: 0.0
+                    scope.launch {
+                        val toAdd = mutableListOf<FamilyMemberEntity>()
+                        val toRemove = mutableListOf<FamilyMemberEntity>()
 
-                        val entity = FamilyMemberEntity(
-                            id = id,
-                            name = name,
-                            role = role,
-                            avatarColorHex = avatarColorHex,
-                            avatarIcon = avatarIcon,
-                            isCurrentActiveUser = isCurrentActiveUser,
-                            householdId = householdId,
-                            monthlyContributionGoal = monthlyContributionGoal
-                        )
+                        for (dc in snapshot.documentChanges) {
+                            val doc = dc.document
+                            val id = doc.id
+                            val name = doc.getString("name") ?: "Member"
+                            val role = doc.getString("role") ?: "Parent"
+                            val avatarColorHex = doc.getString("avatarColorHex") ?: "#1E88E5"
+                            val avatarIcon = doc.getString("avatarIcon") ?: "person"
+                            val isCurrentActiveUser = doc.getBoolean("isCurrentActiveUser") ?: false
+                            val monthlyContributionGoal = doc.getDouble("monthlyContributionGoal") ?: 0.0
 
-                        when (dc.type) {
-                            DocumentChange.Type.ADDED, DocumentChange.Type.MODIFIED -> {
-                                scope.launch {
-                                    repository.addFamilyMember(entity)
+                            val entity = FamilyMemberEntity(
+                                id = id,
+                                name = name,
+                                role = role,
+                                avatarColorHex = avatarColorHex,
+                                avatarIcon = avatarIcon,
+                                isCurrentActiveUser = isCurrentActiveUser,
+                                householdId = householdId,
+                                monthlyContributionGoal = monthlyContributionGoal
+                            )
+
+                            when (dc.type) {
+                                DocumentChange.Type.ADDED, DocumentChange.Type.MODIFIED -> {
+                                    toAdd.add(entity)
                                 }
-                            }
-                            DocumentChange.Type.REMOVED -> {
-                                scope.launch {
-                                    repository.deleteFamilyMember(entity)
+                                DocumentChange.Type.REMOVED -> {
+                                    toRemove.add(entity)
                                 }
                             }
                         }
+                        
+                        if (toAdd.isNotEmpty()) repository.addFamilyMembers(toAdd)
+                        toRemove.forEach { repository.deleteFamilyMember(it) }
                     }
                 }
             }
@@ -247,16 +262,9 @@ class FirestoreSyncManager(
         val hId = currentHouseholdId ?: return
         scope.launch {
             try {
-                val currentExpenses = repository.getExpenses(hId).firstOrNull() ?: emptyList()
-                for (expense in currentExpenses) {
-                    syncExpenseToCloud(expense)
-                }
-
-                val currentMembers = repository.getMembers(hId).firstOrNull() ?: emptyList()
-                for (member in currentMembers) {
-                    syncFamilyMemberToCloud(member)
-                }
-                syncLogCallback?.invoke("⚡ Re-synced ${currentExpenses.size} local expenses & profiles to Firestore cloud.")
+                // Firestore offline persistence automatically handles syncing pending writes 
+                // when the network reconnects. Re-uploading all local data causes severe lag.
+                syncLogCallback?.invoke("⚡ Sync triggered. Firestore will automatically process any pending offline writes.")
             } catch (e: Exception) {
                 Log.e("FirestoreSyncManager", "Error during full re-sync", e)
             }
@@ -264,6 +272,7 @@ class FirestoreSyncManager(
     }
 
     fun syncExpenseToCloud(expense: ExpenseEntity) {
+        if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser == null) return
         val db = firestore ?: return
         val data = hashMapOf(
             "id" to expense.id,
@@ -281,7 +290,10 @@ class FirestoreSyncManager(
             "isRecurring" to expense.isRecurring,
             "recurringFrequency" to expense.recurringFrequency,
             "recurringDayOfMonth" to expense.recurringDayOfMonth,
-            "isAutoCreated" to expense.isAutoCreated
+            "isAutoCreated" to expense.isAutoCreated,
+            "isSettled" to expense.isSettled,
+            "receiptUri" to expense.receiptUri,
+            "tags" to expense.tags
         )
 
         db.collection("households")
@@ -298,6 +310,7 @@ class FirestoreSyncManager(
     }
 
     fun deleteExpenseFromCloud(expense: ExpenseEntity) {
+        if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser == null) return
         val db = firestore ?: return
         db.collection("households")
             .document(expense.householdId)
@@ -307,6 +320,7 @@ class FirestoreSyncManager(
     }
 
     fun syncFamilyMemberToCloud(member: FamilyMemberEntity) {
+        if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser == null) return
         val db = firestore ?: return
         val data = hashMapOf(
             "id" to member.id,
@@ -325,6 +339,7 @@ class FirestoreSyncManager(
     }
 
     fun deleteFamilyMemberFromCloud(member: FamilyMemberEntity) {
+        if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser == null) return
         val db = firestore ?: return
         db.collection("households")
             .document(member.householdId)
@@ -334,6 +349,7 @@ class FirestoreSyncManager(
     }
 
     fun syncHouseholdToCloud(household: HouseholdEntity) {
+        if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser == null) return
         val db = firestore ?: return
         val data = hashMapOf(
             "householdId" to household.householdId,

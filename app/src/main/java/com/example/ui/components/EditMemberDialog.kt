@@ -160,7 +160,7 @@ fun EditMemberDialog(
                 OutlinedTextField(
                     value = monthlyGoalText,
                     onValueChange = { monthlyGoalText = it },
-                    label = { Text("Monthly Allowance / Goal ($ Optional)") },
+                    label = { Text("Monthly Allowance / Goal (₹, optional)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()

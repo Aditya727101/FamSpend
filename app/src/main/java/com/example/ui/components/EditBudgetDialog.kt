@@ -32,7 +32,7 @@ import androidx.compose.ui.unit.dp
 fun EditBudgetDialog(
     currentTotalBudget: Double,
     currentDailyLimit: Double,
-    currencySymbol: String = "$",
+    currencySymbol: String = "₹",
     onDismiss: () -> Unit,
     onSaveCategoryBudget: (categoryName: String, monthlyLimit: Double) -> Unit,
     onSaveTotalBudget: (totalMonthlyBudget: Double) -> Unit,
@@ -87,7 +87,7 @@ fun EditBudgetDialog(
                     value = dailyLimitText,
                     onValueChange = { dailyLimitText = it },
                     label = { Text("Daily Limit ($currencySymbol)") },
-                    placeholder = { Text("e.g. 50 (0 to disable)") },
+                    placeholder = { Text("e.g., 500 (0 to disable)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().testTag("daily_limit_input")
@@ -114,7 +114,7 @@ fun EditBudgetDialog(
                         label = { Text("Select Category") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                         modifier = Modifier
-                            .menuAnchor()
+                            .menuAnchor(androidx.compose.material3.MenuAnchorType.PrimaryNotEditable)
                             .fillMaxWidth()
                     )
                     ExposedDropdownMenu(
