@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -279,7 +280,7 @@ fun AddIncomeDialog(
                 ) {
                     Text(
                         text = currencySymbol,
-                        fontSize = 44.sp,
+                        fontSize = 32.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                     )
@@ -300,14 +301,14 @@ fun AddIncomeDialog(
                         placeholder = {
                             Text(
                                 text = "0.00",
-                                fontSize = 44.sp,
+                                fontSize = 32.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
                                 textAlign = TextAlign.Start
                             )
                         },
                         textStyle = TextStyle(
-                            fontSize = 44.sp,
+                            fontSize = 32.sp,
                             fontWeight = FontWeight.Bold,
                             color = IncomeGreen,
                             textAlign = TextAlign.Start
@@ -380,13 +381,14 @@ fun AddIncomeDialog(
                         color = if (isSelected) IncomeGreen else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
                         border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                         modifier = Modifier
+                            .defaultMinSize(minHeight = 44.dp)
                             .clip(RoundedCornerShape(20.dp))
                             .clickable { selectedCategory = cat }
                             .testTag("income_cat_${cat.name}")
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
                         ) {
                             Text(text = cat.iconEmoji, fontSize = 16.sp)
                             Spacer(modifier = Modifier.width(6.dp))
@@ -469,13 +471,14 @@ fun AddIncomeDialog(
                             color = if (isSelected) IncomeGreen else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         ),
                         modifier = Modifier
+                            .defaultMinSize(minHeight = 44.dp)
                             .clip(RoundedCornerShape(16.dp))
                             .clickable { selectedMemberId = member.id }
                             .testTag("income_member_${member.id}")
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                         ) {
                             MemberAvatar(
                                 name = member.name,
@@ -519,13 +522,14 @@ fun AddIncomeDialog(
                             color = if (isSelected) IncomeGreen else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         ),
                         modifier = Modifier
+                            .defaultMinSize(minHeight = 44.dp)
                             .clip(RoundedCornerShape(14.dp))
                             .clickable { selectedPaymentMethod = method }
                             .testTag("income_method_${method.name}")
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
                         ) {
                             Text(text = method.iconEmoji, fontSize = 14.sp)
                             Spacer(modifier = Modifier.width(6.dp))

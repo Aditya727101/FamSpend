@@ -74,6 +74,10 @@ data class UiState(
     val lastNotifiedThreshold: Int = 0,
     val isAddExpenseDialogOpen: Boolean = false,
     val isAddIncomeDialogOpen: Boolean = false,
+    val isTransferDialogOpen: Boolean = false,
+    val isScanReceiptDialogOpen: Boolean = false,
+    val isSplitExpenseDialogOpen: Boolean = false,
+    val transferSuccessToast: String? = null,
     val incomeSuccessToast: String? = null,
     val isFabMenuOpen: Boolean = false,
     val isAddMemberDialogOpen: Boolean = false,
@@ -674,6 +678,79 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
         viewModelScope.launch(Dispatchers.IO) {
             repository.deleteIncome(income)
             addSyncLog("Deleted income: ${income.source}")
+        }
+    }
+
+    fun openTransferDialog() {
+        _uiState.value = _uiState.value.copy(isTransferDialogOpen = true)
+    }
+
+    fun dismissTransferDialog() {
+        _uiState.value = _uiState.value.copy(isTransferDialogOpen = false)
+    }
+
+    fun clearTransferSuccessToast() {
+        _uiState.value = _uiState.value.copy(transferSuccessToast = null)
+    }
+
+    fun openScanReceiptDialog() {
+        _uiState.value = _uiState.value.copy(isScanReceiptDialogOpen = true)
+    }
+
+    fun dismissScanReceiptDialog() {
+        _uiState.value = _uiState.value.copy(isScanReceiptDialogOpen = false)
+    }
+
+    fun openSplitExpenseDialog() {
+        _uiState.value = _uiState.value.copy(isSplitExpenseDialogOpen = true)
+    }
+
+    fun dismissSplitExpenseDialog() {
+        _uiState.value = _uiState.value.copy(isSplitExpenseDialogOpen = false)
+    }
+
+    fun saveTransfer(
+        fromAccount: String,
+        toAccount: String,
+        amount: Double,
+        date: Long,
+        memberId: String,
+        memberName: String,
+        note: String,
+        fee: Double
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val state = _uiState.value
+            val desc = "Transfer: $fromAccount ➔ $toAccount"
+            val feeInfo = if (fee > 0.0) " (Fee: ${state.currencySymbol}${String.format(Locale.US, "%.2f", fee)})" else ""
+            val fullNote = if (note.isNotBlank()) "$note$feeInfo" else "Internal account transfer$feeInfo"
+
+            val transferExpense = ExpenseEntity(
+                amount = amount + fee,
+                currencySymbol = state.currencySymbol,
+                category = "Transfer",
+                description = desc,
+                paidByMemberId = memberId,
+                paidByMemberName = memberName,
+                splitType = "Transfer",
+                paymentMethod = fromAccount,
+                note = fullNote,
+                timestamp = date,
+                householdId = state.householdId,
+                tags = "transfer,$fromAccount,$toAccount"
+            )
+
+            repository.addExpense(transferExpense)
+            firestoreSyncManager.syncExpenseToCloud(transferExpense)
+            addSyncLog("Recorded transfer: ${state.currencySymbol}${String.format(Locale.US, "%,.2f", amount)} from $fromAccount to $toAccount by $memberName")
+
+            _uiState.value = _uiState.value.copy(
+                isTransferDialogOpen = false,
+                transferSuccessToast = "✓ Transfer of ${state.currencySymbol}${String.format(Locale.US, "%,.2f", amount)} recorded successfully!"
+            )
+
+            delay(2800)
+            _uiState.value = _uiState.value.copy(transferSuccessToast = null)
         }
     }
 

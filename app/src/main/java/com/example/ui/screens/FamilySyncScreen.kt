@@ -10,6 +10,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -131,20 +134,24 @@ fun FamilySyncScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = uiState.householdName,
+                                text = uiState.householdName.ifBlank { "My Household" },
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Black,
-                                color = Color.White
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
 
                         OutlinedButton(
                             onClick = onJoinHouseholdClick,
                             shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.defaultMinSize(minHeight = 44.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
                             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f))
                         ) {
-                            Text("Switch Group", fontWeight = FontWeight.Bold)
+                            Text("Switch Group", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
                     }
 
@@ -176,7 +183,9 @@ fun FamilySyncScreen(
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.ExtraBold,
                                     fontFamily = FontFamily.Monospace,
-                                    color = Color.White
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
 
@@ -192,7 +201,9 @@ fun FamilySyncScreen(
                                     containerColor = Color.White,
                                     contentColor = FamPrimary
                                 ),
-                                modifier = Modifier.testTag("copy_sync_code_btn")
+                                modifier = Modifier
+                                    .defaultMinSize(minHeight = 44.dp)
+                                    .testTag("copy_sync_code_btn")
                             ) {
                                 Icon(imageVector = Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))

@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.Spa
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 
@@ -33,6 +34,7 @@ object CategoryHelper {
         CategoryInfo("Transport & Fuel", Icons.Default.DirectionsCar, Color(0xFFFF9800)),
         CategoryInfo("Healthcare", Icons.Default.LocalHospital, Color(0xFF2196F3)),
         CategoryInfo("Dining & Food", Icons.Default.Restaurant, Color(0xFFFF7043)),
+        CategoryInfo("Transfer", Icons.Default.SwapHoriz, Color(0xFF7C3AED)),
         CategoryInfo("Rent & Mortgage", Icons.Default.Home, Color(0xFFD32F2F)),
         CategoryInfo("Insurance", Icons.Default.Security, Color(0xFF00897B)),
         CategoryInfo("Kids & Education", Icons.Default.School, Color(0xFF00ACC1)),
@@ -46,6 +48,9 @@ object CategoryHelper {
 
     fun getCategoryInfo(categoryName: String): CategoryInfo {
         val lower = categoryName.lowercase(java.util.Locale.getDefault())
+        if (lower.contains("transfer") || lower.contains("account movement")) {
+            return allCategories.find { it.name == "Transfer" }!!
+        }
         if (lower.contains("grocer") || lower.contains("supermarket") || lower.contains("food")) {
             return allCategories.find { it.name == "Groceries" }!!
         }

@@ -6,6 +6,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -475,22 +477,23 @@ fun BudgetsScreen(
                                     Spacer(modifier = Modifier.height(6.dp))
 
                                     Surface(
-                                        shape = RoundedCornerShape(8.dp),
+                                        shape = RoundedCornerShape(10.dp),
                                         color = if (isPaid) FamSuccess.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(8.dp))
+                                            .defaultMinSize(minHeight = 44.dp)
+                                            .clip(RoundedCornerShape(10.dp))
                                             .clickable { billPaidState[bill.id] = !isPaid }
                                     ) {
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                                         ) {
                                             if (isPaid) {
                                                 Icon(
                                                     imageVector = Icons.Default.Check,
                                                     contentDescription = "Paid",
                                                     tint = FamSuccess,
-                                                    modifier = Modifier.size(14.dp)
+                                                    modifier = Modifier.size(16.dp)
                                                 )
                                                 Spacer(modifier = Modifier.width(4.dp))
                                             }

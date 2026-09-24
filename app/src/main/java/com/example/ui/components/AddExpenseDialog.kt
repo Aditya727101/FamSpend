@@ -3,6 +3,8 @@ package com.example.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -152,6 +154,7 @@ fun AddExpenseDialog(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 32.dp)
+                .imePadding()
                 .verticalScroll(rememberScrollState())
         ) {
             Row(
@@ -316,20 +319,27 @@ fun AddExpenseDialog(
             }
             
             Row(
-                modifier = Modifier.fillMaxWidth().clickable { showMoreCategories = !showMoreCategories }.padding(vertical = 4.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 44.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { showMoreCategories = !showMoreCategories }
+                    .padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = if (showMoreCategories) "Hide More Categories" else "More Categories",
                     style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary
                 )
+                Spacer(modifier = Modifier.width(4.dp))
                 Icon(
                     imageVector = if (showMoreCategories) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                     contentDescription = "Toggle",
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             }
             
@@ -346,18 +356,20 @@ fun AddExpenseDialog(
                             color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                             border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
                             modifier = Modifier
+                                .defaultMinSize(minHeight = 44.dp)
+                                .clip(RoundedCornerShape(12.dp))
                                 .clickable { selectedCategory = cat.name }
                                 .testTag("category_chip_${cat.name}")
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
                             ) {
                                 Icon(
                                     imageVector = cat.icon,
                                     contentDescription = cat.name,
                                     tint = if (isSelected) MaterialTheme.colorScheme.primary else cat.color,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
@@ -392,14 +404,17 @@ fun AddExpenseDialog(
                     Surface(
                         shape = RoundedCornerShape(20.dp),
                         color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.clickable {
-                            selectedMemberId = member.id
-                            selectedMemberName = member.name
-                        }
+                        modifier = Modifier
+                            .defaultMinSize(minHeight = 44.dp)
+                            .clip(RoundedCornerShape(20.dp))
+                            .clickable {
+                                selectedMemberId = member.id
+                                selectedMemberName = member.name
+                            }
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
                         ) {
                             MemberAvatar(
                                 name = member.name,
@@ -475,16 +490,23 @@ fun AddExpenseDialog(
                                 shape = RoundedCornerShape(10.dp),
                                 color = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                                 modifier = Modifier
+                                    .defaultMinSize(minHeight = 44.dp)
+                                    .clip(RoundedCornerShape(10.dp))
                                     .clickable { selectedSplit = split }
                                     .testTag("split_chip_$split")
                             ) {
-                                Text(
-                                    text = split,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                                )
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.defaultMinSize(minHeight = 44.dp)
+                                ) {
+                                    Text(
+                                        text = split,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -510,16 +532,23 @@ fun AddExpenseDialog(
                                 shape = RoundedCornerShape(10.dp),
                                 color = if (isSelected) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                                 modifier = Modifier
+                                    .defaultMinSize(minHeight = 44.dp)
+                                    .clip(RoundedCornerShape(10.dp))
                                     .clickable { selectedPaymentMethod = method }
                                     .testTag("payment_chip_$method")
                             ) {
-                                Text(
-                                    text = method,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                                )
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.defaultMinSize(minHeight = 44.dp)
+                                ) {
+                                    Text(
+                                        text = method,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                                    )
+                                }
                             }
                         }
                     }

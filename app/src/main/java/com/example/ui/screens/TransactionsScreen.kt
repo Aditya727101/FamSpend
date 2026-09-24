@@ -3,6 +3,8 @@ package com.example.ui.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -466,18 +468,24 @@ fun TransactionsScreen(
                             shape = RoundedCornerShape(12.dp),
                             color = if (isSelected) FamPrimary else MaterialTheme.colorScheme.surfaceVariant,
                             modifier = Modifier
+                                .defaultMinSize(minHeight = 44.dp)
                                 .clip(RoundedCornerShape(12.dp))
                                 .clickable {
                                     onCategoryFilterChange(if (isSelected && catValue != null) null else catValue)
                                 }
                         ) {
-                            Text(
-                                text = chipLabel,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
-                            )
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.defaultMinSize(minHeight = 44.dp)
+                            ) {
+                                Text(
+                                    text = chipLabel,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                                )
+                            }
                         }
                     }
                 }

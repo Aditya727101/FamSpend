@@ -10,6 +10,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -241,18 +243,22 @@ fun MainAppShell(
 
                             Spacer(modifier = Modifier.width(12.dp))
 
-                            Column {
+                            Column(modifier = Modifier.weight(1f, fill = false)) {
                                 Text(
                                     text = "FamSpend",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Black,
-                                    letterSpacing = 0.sp
+                                    letterSpacing = 0.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = uiState.householdName,
+                                    text = uiState.householdName.ifBlank { "My Household" },
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -269,7 +275,7 @@ fun MainAppShell(
                             )
                         }
                         
-                        // Active User Profile Switcher Chip
+                        // Active User Profile Switcher Chip (minimum 44dp touch target to prevent misclicks)
                         uiState.activeMember?.let { active ->
                             Surface(
                                 shape = RoundedCornerShape(18.dp),
@@ -277,23 +283,27 @@ fun MainAppShell(
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
                                 modifier = Modifier
                                     .padding(end = 8.dp)
+                                    .defaultMinSize(minHeight = 44.dp)
+                                    .clip(RoundedCornerShape(18.dp))
                                     .clickable { selectedTab = 4 }
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
                                 ) {
                                     MemberAvatar(
                                         name = active.name,
                                         colorHex = active.avatarColorHex,
                                         iconName = active.avatarIcon,
-                                        size = 20.dp
+                                        size = 22.dp
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = active.name.split(" ").firstOrNull() ?: active.name,
                                         style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -332,9 +342,10 @@ fun MainAppShell(
                         label = {
                             Text(
                                 text = label,
-                                style = MaterialTheme.typography.labelSmall,
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
                                 fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                maxLines = 1
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         },
                         colors = NavigationBarItemDefaults.colors(
@@ -396,9 +407,10 @@ fun MainAppShell(
                     .fillMaxSize()
                     .widthIn(max = 840.dp)
             ) {
-                // Floating Green Success Toast for logged income
+                // Floating Green Success Toast for logged income or transfer
+                val successToastMessage = uiState.incomeSuccessToast ?: uiState.transferSuccessToast
                 AnimatedVisibility(
-                    visible = uiState.incomeSuccessToast != null,
+                    visible = successToastMessage != null,
                     enter = fadeIn(animationSpec = tween(200)) + slideInVertically(animationSpec = tween(250)) { -it },
                     exit = fadeOut(animationSpec = tween(200)) + slideOutVertically(animationSpec = tween(250)) { -it },
                     modifier = Modifier
@@ -417,14 +429,17 @@ fun MainAppShell(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                         ) {
                             Text(
-                                text = uiState.incomeSuccessToast ?: "",
+                                text = successToastMessage ?: "",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
                                 modifier = Modifier.weight(1f)
                             )
                             IconButton(
-                                onClick = { viewModel.clearIncomeSuccessToast() },
+                                onClick = {
+                                    viewModel.clearIncomeSuccessToast()
+                                    viewModel.clearTransferSuccessToast()
+                                },
                                 modifier = Modifier.size(24.dp)
                             ) {
                                 Icon(
@@ -567,7 +582,7 @@ fun MainAppShell(
                             title = "Transfer between accounts",
                             subtitle = "Move money between banks or cards",
                             onClick = {
-                                closeFabSheetWithAction { viewModel.openAddExpenseDialog() }
+                                closeFabSheetWithAction { viewModel.openTransferDialog() }
                             }
                         )
                         NewEntryRow(
@@ -577,7 +592,7 @@ fun MainAppShell(
                             title = "Scan receipt",
                             subtitle = "Capture receipt with camera or gallery",
                             onClick = {
-                                closeFabSheetWithAction { viewModel.openAddExpenseDialog() }
+                                closeFabSheetWithAction { viewModel.openScanReceiptDialog() }
                             }
                         )
                         NewEntryRow(
@@ -587,7 +602,7 @@ fun MainAppShell(
                             title = "Split expense",
                             subtitle = "Divide equally or custom with family members",
                             onClick = {
-                                closeFabSheetWithAction { viewModel.openAddExpenseDialog() }
+                                closeFabSheetWithAction { viewModel.openSplitExpenseDialog() }
                             }
                         )
                     }
@@ -726,6 +741,72 @@ fun MainAppShell(
                     }
                 )
             }
+
+            if (uiState.isTransferDialogOpen) {
+                com.example.ui.components.TransferMoneyDialog(
+                    members = uiState.members,
+                    activeMember = uiState.activeMember,
+                    currencySymbol = uiState.currencySymbol,
+                    onDismiss = { viewModel.dismissTransferDialog() },
+                    onSave = { fromAccount, toAccount, amount, date, memberId, memberName, note, fee ->
+                        viewModel.saveTransfer(
+                            fromAccount,
+                            toAccount,
+                            amount,
+                            date,
+                            memberId,
+                            memberName,
+                            note,
+                            fee
+                        )
+                    }
+                )
+            }
+
+            if (uiState.isScanReceiptDialogOpen) {
+                com.example.ui.components.ScanReceiptDialog(
+                    members = uiState.members,
+                    activeMember = uiState.activeMember,
+                    currencySymbol = uiState.currencySymbol,
+                    onDismiss = { viewModel.dismissScanReceiptDialog() },
+                    onSaveExpense = { amount, category, description, paidByMemberId, paidByMemberName, splitType, paymentMethod, note, timestamp, receiptUri ->
+                        viewModel.saveExpense(
+                            amount = amount,
+                            category = category,
+                            description = description,
+                            paidByMemberId = paidByMemberId,
+                            paidByMemberName = paidByMemberName,
+                            splitType = splitType,
+                            paymentMethod = paymentMethod,
+                            note = note,
+                            timestamp = timestamp,
+                            receiptUri = receiptUri
+                        )
+                    }
+                )
+            }
+
+            if (uiState.isSplitExpenseDialogOpen) {
+                com.example.ui.components.SplitExpenseDialog(
+                    members = uiState.members,
+                    activeMember = uiState.activeMember,
+                    currencySymbol = uiState.currencySymbol,
+                    onDismiss = { viewModel.dismissSplitExpenseDialog() },
+                    onSave = { amount, category, description, paidByMemberId, paidByMemberName, splitType, paymentMethod, note, timestamp ->
+                        viewModel.saveExpense(
+                            amount = amount,
+                            category = category,
+                            description = description,
+                            paidByMemberId = paidByMemberId,
+                            paidByMemberName = paidByMemberName,
+                            splitType = splitType,
+                            paymentMethod = paymentMethod,
+                            note = note,
+                            timestamp = timestamp
+                        )
+                    }
+                )
+            }
         }
     }
 }
@@ -742,6 +823,7 @@ private fun NewEntryRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .defaultMinSize(minHeight = 52.dp)
             .clip(RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 10.dp),

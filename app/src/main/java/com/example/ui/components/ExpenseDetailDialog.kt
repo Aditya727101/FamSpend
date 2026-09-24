@@ -5,8 +5,10 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.filled.*
@@ -73,6 +75,7 @@ fun ExpenseDetailDialog(
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 32.dp)
+                .verticalScroll(rememberScrollState())
         ) {
             // Header: Category Badge + Status + Close
             Row(
@@ -195,6 +198,20 @@ fun ExpenseDetailDialog(
                             icon = Icons.Default.Repeat,
                             label = "Recurring bill",
                             value = "${expense.recurringFrequency} (Day ${expense.recurringDayOfMonth})"
+                        )
+                    }
+                    if (expense.receiptUri != null) {
+                        DetailRow(
+                            icon = Icons.Default.Receipt,
+                            label = "Receipt",
+                            value = "Scanned receipt attached"
+                        )
+                    }
+                    if (expense.category.equals("Transfer", ignoreCase = true) || expense.splitType.equals("Transfer", ignoreCase = true)) {
+                        DetailRow(
+                            icon = Icons.Default.SwapHoriz,
+                            label = "Transfer",
+                            value = "Account Movement"
                         )
                     }
                 }

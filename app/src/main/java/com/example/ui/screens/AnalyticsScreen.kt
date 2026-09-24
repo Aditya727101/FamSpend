@@ -4,6 +4,8 @@ import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -381,9 +383,10 @@ fun AnalyticsScreen(
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .defaultMinSize(minHeight = 44.dp)
                                     .clip(RoundedCornerShape(10.dp))
                                     .clickable { onMemberClick?.invoke(member.id) }
-                                    .padding(vertical = 4.dp)
+                                    .padding(vertical = 6.dp)
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -404,7 +407,9 @@ fun AnalyticsScreen(
                                         Text(
                                             text = member.name,
                                             style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Bold
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
 
@@ -413,7 +418,9 @@ fun AnalyticsScreen(
                                             text = "${uiState.currencySymbol}${String.format(Locale.US, "%,.2f", spent)} (${pctInt}%)",
                                             style = MaterialTheme.typography.bodyMedium,
                                             fontWeight = FontWeight.ExtraBold,
-                                            color = FamPrimary
+                                            color = FamPrimary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Icon(

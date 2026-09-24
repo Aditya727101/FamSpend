@@ -4,6 +4,10 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -242,23 +246,24 @@ fun HomeScreen(
                                 )
                             }
 
-                            // Frosted Sync Status Indicator Pill
+                            // Frosted Sync Status Indicator Pill (comfortable touch target)
                             Surface(
                                 shape = RoundedCornerShape(16.dp),
                                 color = Color.White.copy(alpha = 0.18f),
                                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
                                 modifier = Modifier
+                                    .defaultMinSize(minHeight = 44.dp)
                                     .clip(RoundedCornerShape(16.dp))
                                     .clickable { onSyncNowClick() }
                                     .testTag("home_sync_status_pill")
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                                 ) {
                                     Box(
                                         modifier = Modifier
-                                            .size(7.dp)
+                                            .size(8.dp)
                                             .clip(CircleShape)
                                             .background(FamSuccess)
                                     )
@@ -282,13 +287,17 @@ fun HomeScreen(
                             style = MaterialTheme.typography.headlineLarge,
                             fontWeight = FontWeight.Black,
                             color = Color.White,
-                            fontSize = 32.sp
+                            fontSize = 30.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = "Remaining to spend from ${uiState.currencySymbol}${String.format(Locale.US, "%,.0f", limit)} budget",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium,
-                            color = Color.White.copy(alpha = 0.88f)
+                            color = Color.White.copy(alpha = 0.88f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -363,33 +372,31 @@ fun HomeScreen(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        // Segmented bar legend
-                        Row(
+                        // Segmented bar legend - wraps gracefully on small smartphones
+                        @OptIn(ExperimentalLayoutApi::class)
+                        FlowRow(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                top3Categories.forEach { (cat, amt) ->
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(7.dp)
-                                                .clip(CircleShape)
-                                                .background(cat.color)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = "${cat.name.split(" ").first()}: ${uiState.currencySymbol}${String.format(Locale.US, "%,.0f", amt)}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontSize = 11.sp,
-                                            color = Color.White.copy(alpha = 0.9f)
-                                        )
-                                    }
+                            top3Categories.forEach { (cat, amt) ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(end = 6.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(cat.color)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "${cat.name.split(" ").first()}: ${uiState.currencySymbol}${String.format(Locale.US, "%,.0f", amt)}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontSize = 11.sp,
+                                        color = Color.White.copy(alpha = 0.9f)
+                                    )
                                 }
                             }
 
@@ -404,16 +411,19 @@ fun HomeScreen(
 
                         Spacer(modifier = Modifier.height(20.dp))
 
-                        // Action Buttons
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        // Action Buttons - responsive padding and touch height
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Button(
                                 onClick = onAddExpenseClick,
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .defaultMinSize(minHeight = 48.dp),
                                 shape = RoundedCornerShape(14.dp),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = Color.White,
                                     contentColor = FamPrimary
                                 ),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
                                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
                             ) {
                                 Icon(
@@ -421,20 +431,35 @@ fun HomeScreen(
                                     contentDescription = null,
                                     modifier = Modifier.size(18.dp)
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Add Expense", fontWeight = FontWeight.ExtraBold)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    "Add Expense",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
 
                             OutlinedButton(
                                 onClick = onEditBudgetClick,
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .defaultMinSize(minHeight = 48.dp),
                                 shape = RoundedCornerShape(14.dp),
                                 colors = ButtonDefaults.outlinedButtonColors(
                                     contentColor = Color.White
                                 ),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
                                 border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.6f))
                             ) {
-                                Text("View Budgets", fontWeight = FontWeight.Bold)
+                                Text(
+                                    "View Budgets",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
                     }
@@ -811,7 +836,8 @@ fun HomeScreen(
                     OutlinedButton(
                         onClick = onAddMemberClick,
                         shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.defaultMinSize(minHeight = 44.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                         border = BorderStroke(1.dp, FamPrimary.copy(alpha = 0.5f))
                     ) {
                         Icon(
