@@ -37,17 +37,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-data class SampleReceipt(
-    val title: String,
-    val merchant: String,
-    val amount: Double,
-    val category: String,
-    val paymentMethod: String,
-    val items: List<Pair<String, Double>>,
-    val tax: Double,
-    val iconEmoji: String
-)
-
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ScanReceiptDialog(
@@ -120,49 +109,6 @@ fun ScanReceiptDialog(
             }
         }
     }
-
-    val sampleReceipts = listOf(
-        SampleReceipt(
-            title = "Supermarket",
-            merchant = "Trader Joe's Market",
-            amount = 74.35,
-            category = "Groceries",
-            paymentMethod = "Credit Card",
-            items = listOf("Organic Produce" to 18.20, "Almond Milk" to 3.99, "Eggs & Dairy" to 8.50, "Pasta & Sauce" to 7.40, "Snacks & Nuts" to 12.30, "Tax" to 4.15),
-            tax = 4.15,
-            iconEmoji = "🛒"
-        ),
-        SampleReceipt(
-            title = "Coffee & Cafe",
-            merchant = "Starbucks Coffee",
-            amount = 16.85,
-            category = "Dining & Food",
-            paymentMethod = "Google Pay",
-            items = listOf("Caffe Latte Large" to 5.45, "Iced Caramel Macchiato" to 5.95, "Butter Croissant" to 3.95, "Tax" to 1.50),
-            tax = 1.50,
-            iconEmoji = "☕"
-        ),
-        SampleReceipt(
-            title = "Gas Station",
-            merchant = "Shell Express Fuel",
-            amount = 48.50,
-            category = "Transport & Fuel",
-            paymentMethod = "Credit Card",
-            items = listOf("Regular Fuel 13.5 Gallons" to 44.55, "Bottle of Water" to 2.25, "Tax" to 1.70),
-            tax = 1.70,
-            iconEmoji = "⛽"
-        ),
-        SampleReceipt(
-            title = "Pharmacy",
-            merchant = "CVS Health & Pharmacy",
-            amount = 32.10,
-            category = "Healthcare",
-            paymentMethod = "Debit Card",
-            items = listOf("Multivitamins Daily" to 14.99, "Pain Relief Ibuprofen" to 8.49, "Bandages & First Aid" to 6.29, "Tax" to 2.33),
-            tax = 2.33,
-            iconEmoji = "💊"
-        )
-    )
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -257,14 +203,14 @@ fun ScanReceiptDialog(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Select from gallery or choose a realistic sample below to extract totals instantly",
+                            text = "Upload or capture a receipt image from your device to automatically extract merchant, amount, and items",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 16.dp)
                         )
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(20.dp))
 
                         Button(
                             onClick = {
@@ -274,82 +220,13 @@ fun ScanReceiptDialog(
                             },
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
-                                .fillMaxWidth(0.85f)
-                                .height(46.dp)
+                                .fillMaxWidth()
+                                .height(50.dp)
                                 .testTag("pick_receipt_image_button")
                         ) {
-                            Icon(imageVector = Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(imageVector = Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Choose from Gallery / Camera", fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // Realistic Sample Receipts Section
-                Text(
-                    text = "Or Test with Sample Receipts",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    sampleReceipts.forEach { sample ->
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .defaultMinSize(minHeight = 44.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .clickable {
-                                    isScanning = true
-                                    coroutineScope.launch {
-                                        delay(700)
-                                        merchantName = sample.merchant
-                                        amountText = String.format(Locale.US, "%.2f", sample.amount)
-                                        selectedCategory = sample.category
-                                        selectedPaymentMethod = sample.paymentMethod
-                                        extractedItems = sample.items
-                                        noteText = "Scanned receipt: ${sample.merchant} (${sample.items.size} items)"
-                                        receiptImageUri = Uri.parse("content://demo.receipt/${sample.title.lowercase()}")
-                                        isScanning = false
-                                        scanCompleted = true
-                                    }
-                                }
-                                .testTag("sample_receipt_${sample.title.lowercase().replace(" ", "_")}")
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-                            ) {
-                                Text(sample.iconEmoji, fontSize = 24.sp)
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = sample.merchant,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "${sample.category} • ${sample.items.size} line items",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                Text(
-                                    text = "$currencySymbol${String.format(Locale.US, "%.2f", sample.amount)}",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
-                            }
                         }
                     }
                 }

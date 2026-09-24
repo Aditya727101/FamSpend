@@ -128,15 +128,15 @@ class ExampleRobolectricTest {
             amount = total,
             currencySymbol = "₹",
             category = "Groceries",
-            description = "Trader Joe's Market",
+            description = "Supermarket Grocery Store",
             paidByMemberId = "m2",
             paidByMemberName = "Mom",
-            receiptUri = "content://demo.receipt/supermarket",
-            note = "Scanned receipt: Trader Joe's Market (${sampleItems.size} items)"
+            receiptUri = "content://media/external/images/media/1002",
+            note = "Scanned receipt: Supermarket (${sampleItems.size} items)"
         )
 
         assertEquals(30.69, receiptExpense.amount, 0.001)
-        assertEquals("content://demo.receipt/supermarket", receiptExpense.receiptUri)
+        assertEquals("content://media/external/images/media/1002", receiptExpense.receiptUri)
         assertTrue(receiptExpense.note.contains("Scanned receipt"))
     }
 
