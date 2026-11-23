@@ -91,7 +91,9 @@ fun FamilySyncScreen(
     onClearAllData: () -> Unit = {},
     onToggleDarkMode: (Boolean) -> Unit = {},
     onEditMemberClick: (com.example.data.model.FamilyMemberEntity) -> Unit = {},
-    onDeleteMemberClick: (com.example.data.model.FamilyMemberEntity) -> Unit = {}
+    onDeleteMemberClick: (com.example.data.model.FamilyMemberEntity) -> Unit = {},
+    onSignInClick: () -> Unit = {},
+    onSignOutClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
@@ -146,12 +148,12 @@ fun FamilySyncScreen(
                         OutlinedButton(
                             onClick = onJoinHouseholdClick,
                             shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.defaultMinSize(minHeight = 44.dp),
+                            modifier = Modifier.defaultMinSize(minHeight = 48.dp),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
                             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f))
                         ) {
-                            Text("Switch Group", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text("Join Invite", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
                     }
 
@@ -279,12 +281,54 @@ fun FamilySyncScreen(
                     OutlinedButton(
                         onClick = onSyncNowClick,
                         shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier
+                            .weight(1f)
+                            .defaultMinSize(minHeight = 48.dp)
                     ) {
                         Icon(imageVector = Icons.Default.Sync, contentDescription = "Sync", modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Sync Now")
                     }
+
+                    if (uiState.authUser == null) {
+                        Button(
+                            onClick = onSignInClick,
+                            enabled = !uiState.isAuthLoading,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = FamPrimary),
+                            modifier = Modifier
+                                .weight(1f)
+                                .defaultMinSize(minHeight = 48.dp)
+                                .testTag("family_sign_in_google_btn")
+                        ) {
+                            Text(
+                                text = if (uiState.isAuthLoading) "Signing in..." else "Sign in",
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = onSignOutClick,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .defaultMinSize(minHeight = 48.dp)
+                                .testTag("family_sign_out_btn")
+                        ) {
+                            Text("Sign Out", fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+
+                uiState.authUser?.let { user ->
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Signed in as ${user.displayName} (${user.email})",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         }
@@ -405,7 +449,10 @@ fun FamilySyncScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // Device User Identity Switcher
+        // Device User Identity & Member Management Header
+        val pendingInvitesCount = uiState.invitations.count {
+            it.effectiveStatus() == com.example.data.model.InvitationStatus.PENDING
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -418,16 +465,22 @@ fun FamilySyncScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Select who is currently using this phone",
+                    text = if (pendingInvitesCount > 0) {
+                        "$pendingInvitesCount pending invitation${if (pendingInvitesCount == 1) "" else "s"} • Tap Add Member to manage"
+                    } else {
+                        "Select who is currently using this phone"
+                    },
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (pendingInvitesCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
             OutlinedButton(
                 onClick = onAddMemberClick,
                 shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.testTag("add_family_member_btn")
+                modifier = Modifier
+                    .defaultMinSize(minHeight = 48.dp)
+                    .testTag("add_family_member_btn")
             ) {
                 Icon(imageVector = Icons.Default.Add, contentDescription = "Add Member", modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(4.dp))
@@ -514,20 +567,25 @@ fun FamilySyncScreen(
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
                                         Text(
                                             text = member.name,
                                             style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
+                                        com.example.ui.components.RoleBadgePill(role = member.parsedHouseholdRole())
                                         if (isActive) {
-                                            Spacer(modifier = Modifier.width(6.dp))
                                             Surface(
                                                 shape = RoundedCornerShape(6.dp),
                                                 color = MaterialTheme.colorScheme.primary
                                             ) {
                                                 Text(
-                                                    text = "Active User",
+                                                    text = "Active",
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.onPrimary,
                                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -536,9 +594,11 @@ fun FamilySyncScreen(
                                         }
                                     }
                                     Text(
-                                        text = member.role,
+                                        text = member.email.ifBlank { member.role },
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -546,7 +606,8 @@ fun FamilySyncScreen(
                             if (!isActive) {
                                 OutlinedButton(
                                     onClick = { onSwitchActiveMember(member.id) },
-                                    shape = RoundedCornerShape(10.dp)
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.defaultMinSize(minHeight = 44.dp)
                                 ) {
                                     Text("Switch")
                                 }
@@ -561,24 +622,39 @@ fun FamilySyncScreen(
                         }
                     }
 
+                    val isSelf = uiState.authUser != null &&
+                        (member.userId == uiState.authUser.uid || member.id == uiState.authUser.uid)
+                    val canRemove = uiState.currentUserHouseholdRole.canRemoveMember(
+                        member.parsedHouseholdRole(),
+                        isSelf
+                    )
                     DropdownMenu(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
                     ) {
                         DropdownMenuItem(
+                            text = { Text("Manage Members & Invites") },
+                            onClick = {
+                                showMenu = false
+                                onAddMemberClick()
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Edit Member") },
-                            onClick = { 
+                            onClick = {
                                 showMenu = false
                                 onEditMemberClick(member)
                             }
                         )
-                        DropdownMenuItem(
-                            text = { Text("Remove Member") },
-                            onClick = { 
-                                showMenu = false
-                                onDeleteMemberClick(member)
-                            }
-                        )
+                        if (canRemove) {
+                            DropdownMenuItem(
+                                text = { Text("Remove Member") },
+                                onClick = {
+                                    showMenu = false
+                                    onDeleteMemberClick(member)
+                                }
+                            )
+                        }
                     }
                 }
             }

@@ -1,0 +1,383 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================================
+    // Helper Functions
+    // =========================================================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function memberPath(householdId, uid) {
+      return /databases/$(database)/documents/households/$(householdId)/members/$(uid);
+    }
+
+    function householdPath(householdId) {
+      return /databases/$(database)/documents/households/$(householdId);
+    }
+
+    function invitationPath(tokenHash) {
+      return /databases/$(database)/documents/invitations/$(tokenHash);
+    }
+
+    function isHouseholdMember(householdId) {
+      return isSignedIn()
+        && exists(memberPath(householdId, request.auth.uid))
+        && get(memberPath(householdId, request.auth.uid)).data.membershipStatus == 'ACTIVE';
+    }
+
+    function currentMemberRole(householdId) {
+      return get(memberPath(householdId, request.auth.uid)).data.householdRole;
+    }
+
+    function isHouseholdOwner(householdId) {
+      return isHouseholdMember(householdId) && currentMemberRole(householdId) == 'OWNER';
+    }
+
+    function isHouseholdAdmin(householdId) {
+      return isHouseholdMember(householdId) && currentMemberRole(householdId) == 'ADMIN';
+    }
+
+    function isHouseholdAdminOrOwner(householdId) {
+      return isHouseholdMember(householdId)
+        && currentMemberRole(householdId) in ['OWNER', 'ADMIN'];
+    }
+
+    function isValidEmailMatch(targetEmail) {
+      return targetEmail == ''
+        || (request.auth.token.email_verified == true
+            && request.auth.token.email is string
+            && request.auth.token.email.lower() == targetEmail.lower());
+    }
+
+    function isValidHouseholdSchema(data, householdId) {
+      return data.keys().hasOnly([
+          'householdId', 'householdName', 'inviteCode', 'defaultCurrency',
+          'totalMonthlyBudget', 'lastSyncedTimestamp', 'isLiveSyncEnabled',
+          'ownerUserId', 'createdAt', 'updatedAt'
+        ])
+        && data.householdId == householdId
+        && data.householdName is string && data.householdName.size() >= 1 && data.householdName.size() <= 100
+        && data.inviteCode is string && data.inviteCode.size() >= 1 && data.inviteCode.size() <= 64
+        && data.defaultCurrency is string && data.defaultCurrency.size() >= 1 && data.defaultCurrency.size() <= 8
+        && data.totalMonthlyBudget is number && data.totalMonthlyBudget >= 0
+        && data.lastSyncedTimestamp is number
+        && data.isLiveSyncEnabled is bool
+        && data.ownerUserId is string && data.ownerUserId.size() > 0;
+    }
+
+    function isValidMemberSchema(data, householdId, memberId) {
+      return data.keys().hasOnly([
+          'id', 'userId', 'name', 'email', 'role', 'householdRole',
+          'membershipStatus', 'avatarColorHex', 'avatarIcon', 'householdId',
+          'monthlyContributionGoal', 'acceptedInvitationHash', 'joinedAt', 'updatedAt'
+        ])
+        && data.id == memberId
+        && data.householdId == householdId
+        && data.userId is string && data.userId.size() <= 128
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 100
+        && data.email is string && data.email.size() <= 254
+        && data.role is string && data.role.size() >= 1 && data.role.size() <= 40
+        && data.householdRole in ['OWNER', 'ADMIN', 'MEMBER']
+        && data.membershipStatus in ['ACTIVE', 'REMOVED']
+        && data.avatarColorHex is string && data.avatarColorHex.size() <= 16
+        && data.avatarIcon is string && data.avatarIcon.size() <= 40
+        && data.monthlyContributionGoal is number && data.monthlyContributionGoal >= 0
+        && (!('acceptedInvitationHash' in data) || (data.acceptedInvitationHash is string && data.acceptedInvitationHash.size() <= 64));
+    }
+
+    function isValidInvitationSchema(data, tokenHash) {
+      return data.keys().hasOnly([
+          'id', 'householdId', 'householdName', 'inviterUserId', 'inviterName',
+          'inviteeEmail', 'inviteeName', 'personalMessage', 'invitationTokenHash',
+          'role', 'status', 'adminUids', 'createdAt', 'expiresAt',
+          'acceptedAt', 'acceptedByUserId', 'revokedAt', 'updatedAt'
+        ])
+        && data.id is string && data.id.size() >= 1 && data.id.size() <= 128
+        && data.householdId is string && data.householdId.size() >= 1 && data.householdId.size() <= 128
+        && data.householdName is string && data.householdName.size() >= 1 && data.householdName.size() <= 100
+        && data.inviterUserId is string && data.inviterUserId.size() >= 1 && data.inviterUserId.size() <= 128
+        && data.inviterName is string && data.inviterName.size() >= 1 && data.inviterName.size() <= 100
+        && data.inviteeEmail is string && data.inviteeEmail.size() <= 254
+        && data.inviteeName is string && data.inviteeName.size() <= 100
+        && data.personalMessage is string && data.personalMessage.size() <= 500
+        && data.invitationTokenHash == tokenHash && tokenHash.size() == 64
+        && data.role in ['ADMIN', 'MEMBER']
+        && data.status in ['PENDING', 'ACCEPTED', 'EXPIRED', 'REVOKED']
+        && data.adminUids is list && data.adminUids.size() >= 1 && data.adminUids.size() <= 20
+        && data.createdAt is timestamp
+        && data.expiresAt is timestamp
+        && data.updatedAt is timestamp
+        && data.acceptedByUserId is string && data.acceptedByUserId.size() <= 128
+        && (data.acceptedAt == null || data.acceptedAt is timestamp)
+        && (data.revokedAt == null || data.revokedAt is timestamp);
+    }
+
+    // =========================================================================
+    // /users/{userId} - Private User Profile & Active Household Pointer
+    // =========================================================================
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId)
+        && incoming().keys().hasOnly(['uid', 'displayName', 'email', 'activeHouseholdId', 'updatedAt'])
+        && incoming().uid == userId
+        && incoming().displayName is string && incoming().displayName.size() <= 100
+        && incoming().email is string && incoming().email.size() <= 254
+        && incoming().activeHouseholdId is string && incoming().activeHouseholdId.size() <= 128
+        && incoming().updatedAt is timestamp && incoming().updatedAt <= request.time
+        && (incoming().activeHouseholdId == ''
+            || exists(memberPath(incoming().activeHouseholdId, userId))
+            || existsAfter(memberPath(incoming().activeHouseholdId, userId)));
+
+      allow update: if isOwner(userId)
+        && incoming().keys().hasOnly(['uid', 'displayName', 'email', 'activeHouseholdId', 'updatedAt'])
+        && incoming().uid == existing().uid
+        && incoming().displayName is string && incoming().displayName.size() <= 100
+        && incoming().email is string && incoming().email.size() <= 254
+        && incoming().activeHouseholdId is string && incoming().activeHouseholdId.size() <= 128
+        && incoming().updatedAt is timestamp && incoming().updatedAt <= request.time
+        && (incoming().activeHouseholdId == existing().activeHouseholdId
+            || incoming().activeHouseholdId == ''
+            || exists(memberPath(incoming().activeHouseholdId, userId))
+            || existsAfter(memberPath(incoming().activeHouseholdId, userId)));
+
+      allow delete: if false;
+    }
+
+    // =========================================================================
+    // /households/{householdId} - Household Container & Private Financial Data
+    // =========================================================================
+    match /households/{householdId} {
+      allow get: if isHouseholdMember(householdId);
+      allow list: if false;
+
+      // Bootstrap a brand new household: creator must become OWNER in same transaction/batch
+      allow create: if isSignedIn()
+        && isValidHouseholdSchema(incoming(), householdId)
+        && incoming().ownerUserId == request.auth.uid
+        && incoming().createdAt is timestamp && incoming().createdAt <= request.time
+        && incoming().updatedAt is timestamp && incoming().updatedAt <= request.time
+        && existsAfter(memberPath(householdId, request.auth.uid))
+        && getAfter(memberPath(householdId, request.auth.uid)).data.householdRole == 'OWNER';
+
+      allow update: if isHouseholdAdminOrOwner(householdId)
+        && isValidHouseholdSchema(incoming(), householdId)
+        && incoming().ownerUserId == existing().ownerUserId
+        && incoming().householdId == existing().householdId
+        && incoming().updatedAt is timestamp && incoming().updatedAt <= request.time;
+
+      allow delete: if isHouseholdOwner(householdId);
+
+      // -----------------------------------------------------------------------
+      // /households/{householdId}/members/{memberId}
+      // -----------------------------------------------------------------------
+      match /members/{memberId} {
+        allow get, list: if isHouseholdMember(householdId);
+
+        allow create: if isSignedIn()
+          && isValidMemberSchema(incoming(), householdId, memberId)
+          && incoming().membershipStatus == 'ACTIVE'
+          && (
+            // Branch 1: Owner bootstrapping a brand-new household
+            (
+              memberId == request.auth.uid
+              && incoming().userId == request.auth.uid
+              && incoming().householdRole == 'OWNER'
+              && !exists(householdPath(householdId))
+              && existsAfter(householdPath(householdId))
+              && getAfter(householdPath(householdId)).data.ownerUserId == request.auth.uid
+            )
+            // Branch 2: Recipient accepting a valid, unexpired, single-use invitation atomically
+            || (
+              memberId == request.auth.uid
+              && incoming().userId == request.auth.uid
+              && incoming().householdRole in ['ADMIN', 'MEMBER']
+              && 'acceptedInvitationHash' in incoming()
+              && incoming().acceptedInvitationHash.size() == 64
+              && exists(invitationPath(incoming().acceptedInvitationHash))
+              && get(invitationPath(incoming().acceptedInvitationHash)).data.householdId == householdId
+              && get(invitationPath(incoming().acceptedInvitationHash)).data.status == 'PENDING'
+              && get(invitationPath(incoming().acceptedInvitationHash)).data.expiresAt > request.time
+              && get(invitationPath(incoming().acceptedInvitationHash)).data.role == incoming().householdRole
+              && isValidEmailMatch(get(invitationPath(incoming().acceptedInvitationHash)).data.inviteeEmail)
+              && getAfter(invitationPath(incoming().acceptedInvitationHash)).data.status == 'ACCEPTED'
+              && getAfter(invitationPath(incoming().acceptedInvitationHash)).data.acceptedByUserId == request.auth.uid
+            )
+            // Branch 3: Owner/Admin adding a non-account household profile (e.g. child without login)
+            || (
+              isHouseholdAdminOrOwner(householdId)
+              && incoming().householdRole == 'MEMBER'
+              && incoming().userId == ''
+            )
+          );
+
+        allow update: if isSignedIn()
+          && isValidMemberSchema(incoming(), householdId, memberId)
+          && incoming().userId == existing().userId
+          && incoming().householdId == existing().householdId
+          && (
+            // Branch 1: Member editing own display metadata (strictly NO role escalation)
+            (
+              isHouseholdMember(householdId)
+              && memberId == request.auth.uid
+              && incoming().householdRole == existing().householdRole
+              && incoming().membershipStatus == existing().membershipStatus
+            )
+            // Branch 2: Owner managing another member's role (ADMIN <-> MEMBER only)
+            || (
+              isHouseholdOwner(householdId)
+              && memberId != request.auth.uid
+              && existing().householdRole != 'OWNER'
+              && incoming().householdRole in ['ADMIN', 'MEMBER']
+            )
+            // Branch 3: Admin editing a MEMBER's metadata (cannot escalate to ADMIN/OWNER)
+            || (
+              isHouseholdAdmin(householdId)
+              && existing().householdRole == 'MEMBER'
+              && incoming().householdRole == 'MEMBER'
+            )
+          );
+
+        allow delete: if isSignedIn()
+          && (
+            (isHouseholdOwner(householdId) && memberId != request.auth.uid && existing().householdRole != 'OWNER')
+            || (isHouseholdAdmin(householdId) && existing().householdRole == 'MEMBER')
+            || (memberId == request.auth.uid && existing().householdRole != 'OWNER')
+          );
+      }
+
+      // -----------------------------------------------------------------------
+      // /households/{householdId}/expenses/{expenseId}
+      // -----------------------------------------------------------------------
+      match /expenses/{expenseId} {
+        allow read: if isHouseholdMember(householdId);
+        allow create, update: if isHouseholdMember(householdId)
+          && incoming().householdId == householdId
+          && incoming().id == expenseId
+          && incoming().amount is number && incoming().amount >= 0
+          && incoming().description is string && incoming().description.size() <= 200
+          && incoming().category is string && incoming().category.size() <= 80;
+        allow delete: if isHouseholdMember(householdId);
+      }
+
+      // -----------------------------------------------------------------------
+      // /households/{householdId}/incomes/{incomeId}
+      // -----------------------------------------------------------------------
+      match /incomes/{incomeId} {
+        allow read: if isHouseholdMember(householdId);
+        allow create, update: if isHouseholdMember(householdId)
+          && incoming().householdId == householdId
+          && incoming().id == incomeId
+          && incoming().amount is number && incoming().amount >= 0;
+        allow delete: if isHouseholdMember(householdId);
+      }
+
+      // -----------------------------------------------------------------------
+      // /households/{householdId}/budgets/{budgetId}
+      // -----------------------------------------------------------------------
+      match /budgets/{budgetId} {
+        allow read: if isHouseholdMember(householdId);
+        allow create, update: if isHouseholdMember(householdId)
+          && incoming().householdId == householdId
+          && incoming().monthlyLimit is number && incoming().monthlyLimit >= 0;
+        allow delete: if isHouseholdAdminOrOwner(householdId);
+      }
+    }
+
+    // =========================================================================
+    // /invitations/{tokenHash} - Single-Use Cryptographically Hashed Invitations
+    // =========================================================================
+    match /invitations/{tokenHash} {
+      // Knowing the unguessable 256-bit SHA-256 tokenHash grants read access to
+      // minimal invitation metadata ONLY (no financial data is stored here).
+      allow get: if isSignedIn();
+
+      // Enumeration is strictly forbidden: only the inviter or authorized
+      // household admins (recorded in adminUids) may list invitations.
+      allow list: if isSignedIn()
+        && (resource.data.inviterUserId == request.auth.uid
+            || request.auth.uid in resource.data.adminUids);
+
+      allow create: if isSignedIn()
+        && isValidInvitationSchema(incoming(), tokenHash)
+        && isHouseholdAdminOrOwner(incoming().householdId)
+        && incoming().inviterUserId == request.auth.uid
+        && request.auth.uid in incoming().adminUids
+        && incoming().status == 'PENDING'
+        && incoming().createdAt <= request.time
+        && incoming().updatedAt <= request.time
+        && incoming().expiresAt > request.time
+        && incoming().acceptedAt == null
+        && incoming().acceptedByUserId == ''
+        && incoming().revokedAt == null;
+
+      allow update: if isSignedIn()
+        && isValidInvitationSchema(incoming(), tokenHash)
+        // Immutable invitation identity fields
+        && incoming().id == existing().id
+        && incoming().householdId == existing().householdId
+        && incoming().inviterUserId == existing().inviterUserId
+        && incoming().invitationTokenHash == existing().invitationTokenHash
+        && incoming().createdAt == existing().createdAt
+        && incoming().inviteeEmail == existing().inviteeEmail
+        && incoming().role == existing().role
+        && incoming().updatedAt <= request.time
+        && (
+          // Action 1: Authorized Owner/Admin revoking a pending invitation
+          (
+            isHouseholdAdminOrOwner(existing().householdId)
+            && existing().status == 'PENDING'
+            && incoming().status == 'REVOKED'
+            && incoming().revokedAt is timestamp && incoming().revokedAt <= request.time
+            && incoming().acceptedAt == null
+            && incoming().acceptedByUserId == ''
+          )
+          // Action 2: Authorized Owner/Admin resending / extending expiration
+          || (
+            isHouseholdAdminOrOwner(existing().householdId)
+            && existing().status in ['PENDING', 'EXPIRED']
+            && incoming().status == 'PENDING'
+            && incoming().expiresAt > request.time
+            && incoming().revokedAt == null
+            && incoming().acceptedAt == null
+            && incoming().acceptedByUserId == ''
+          )
+          // Action 3: Recipient atomically accepting a valid, unexpired single-use invitation
+          || (
+            existing().status == 'PENDING'
+            && existing().expiresAt > request.time
+            && isValidEmailMatch(existing().inviteeEmail)
+            && incoming().status == 'ACCEPTED'
+            && incoming().acceptedByUserId == request.auth.uid
+            && incoming().acceptedAt is timestamp && incoming().acceptedAt <= request.time
+            && incoming().revokedAt == null
+            && incoming().expiresAt == existing().expiresAt
+            && existsAfter(memberPath(existing().householdId, request.auth.uid))
+          )
+        );
+
+      // Preserve audit history; invitations must be revoked rather than hard-deleted.
+      allow delete: if false;
+    }
+
+    // Default deny for everything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

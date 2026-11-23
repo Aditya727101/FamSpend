@@ -835,20 +835,22 @@ fun HomeScreen(
                     OutlinedButton(
                         onClick = onAddMemberClick,
                         shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.defaultMinSize(minHeight = 44.dp),
+                        modifier = Modifier
+                            .defaultMinSize(minHeight = 48.dp)
+                            .testTag("home_invite_btn"),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                         border = BorderStroke(1.dp, FamPrimary.copy(alpha = 0.5f))
                     ) {
                         Icon(
                             imageVector = Icons.Default.GroupAdd,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
+                            contentDescription = "Invite family",
+                            modifier = Modifier.size(16.dp),
                             tint = FamPrimary
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             "Invite",
-                            style = MaterialTheme.typography.labelSmall,
+                            style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = FamPrimary
                         )
@@ -886,13 +888,21 @@ fun HomeScreen(
                                     )
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column(modifier = Modifier.weight(1f)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(
+                                                member.name,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            com.example.ui.components.RoleBadgePill(
+                                                role = member.parsedHouseholdRole()
+                                            )
+                                        }
                                         Text(
-                                            member.name,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(
-                                            member.role,
+                                            text = member.email.ifBlank { member.role },
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )

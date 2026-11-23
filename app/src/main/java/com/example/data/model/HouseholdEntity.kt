@@ -12,5 +12,6 @@ data class HouseholdEntity(
     val defaultCurrency: String = "₹",
     val totalMonthlyBudget: Double = 3000.0,
     val lastSyncedTimestamp: Long = System.currentTimeMillis(),
-    val isLiveSyncEnabled: Boolean = true
+    val isLiveSyncEnabled: Boolean = true,
+    val ownerUserId: String = ""
 )

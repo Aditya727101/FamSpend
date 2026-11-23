@@ -198,6 +198,17 @@ fun MainAppShell(
         }
     }
 
+    LaunchedEffect(uiState.authError) {
+        val err = uiState.authError
+        if (!err.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(
+                message = err,
+                duration = SnackbarDuration.Short
+            )
+            viewModel.clearAuthError()
+        }
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -275,12 +286,19 @@ fun MainAppShell(
                     actions = {
                         val context = androidx.compose.ui.platform.LocalContext.current
                         androidx.compose.material3.IconButton(
-                            onClick = { viewModel.signInWithGoogle(context) }
+                            onClick = {
+                                if (uiState.authUser == null) {
+                                    viewModel.signInWithGoogle(context)
+                                } else {
+                                    selectedTab = 4
+                                }
+                            },
+                            modifier = Modifier.testTag("top_bar_account_btn")
                         ) {
                             androidx.compose.material3.Icon(
                                 imageVector = androidx.compose.material.icons.Icons.Default.AccountCircle,
-                                contentDescription = "Sign in to Sync",
-                                tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurface
+                                contentDescription = if (uiState.authUser != null) "Signed in: ${uiState.authUser.displayName}" else "Sign in to Sync",
+                                tint = if (uiState.authUser != null) com.example.ui.theme.FamSuccess else androidx.compose.material3.MaterialTheme.colorScheme.onSurface
                             )
                         }
                         
@@ -483,7 +501,7 @@ fun MainAppShell(
                             onToggleSelection = { viewModel.toggleExpenseSelection(it) },
                             onDismissBudgetAlert = { viewModel.dismissBudgetAlert() },
                             onEditBudgetClick = { viewModel.openEditBudgetDialog() },
-                            onAddMemberClick = { viewModel.openAddMemberDialog() }
+                            onAddMemberClick = { viewModel.openInviteFamilySheet() }
                         )
                         1 -> TransactionsScreen(
                             uiState = uiState,
@@ -510,20 +528,25 @@ fun MainAppShell(
                             uiState = uiState,
                             onExportCsvClick = { viewModel.openExportCsvDialog() }
                         )
-                        4 -> FamilySyncScreen(
-                            uiState = uiState,
-                            onAddMemberClick = { viewModel.openAddMemberDialog() },
-                            onSwitchActiveMember = { viewModel.switchActiveMember(it) },
-                            onToggleLiveSync = { viewModel.toggleLiveSync(it) },
-                            onSyncNowClick = { viewModel.triggerManualSync() },
-                            onSimulateLiveClick = { viewModel.simulateLiveFamilyTransaction() },
-                            onJoinHouseholdClick = { viewModel.openJoinHouseholdDialog() },
-                            onOpenCurrencySettings = { viewModel.openCurrencySettingsDialog() },
-                            onClearAllData = { viewModel.clearAllAppData() },
-                            onToggleDarkMode = { viewModel.toggleDarkMode(it) },
-                            onEditMemberClick = { viewModel.openEditMemberDialog(it) },
-                            onDeleteMemberClick = { viewModel.deleteMember(it) }
-                        )
+                        4 -> {
+                            val familyCtx = androidx.compose.ui.platform.LocalContext.current
+                            FamilySyncScreen(
+                                uiState = uiState,
+                                onAddMemberClick = { viewModel.openMemberManagementSheet() },
+                                onSwitchActiveMember = { viewModel.switchActiveMember(it) },
+                                onToggleLiveSync = { viewModel.toggleLiveSync(it) },
+                                onSyncNowClick = { viewModel.triggerManualSync() },
+                                onSimulateLiveClick = { viewModel.simulateLiveFamilyTransaction() },
+                                onJoinHouseholdClick = { viewModel.openJoinHouseholdDialog() },
+                                onOpenCurrencySettings = { viewModel.openCurrencySettingsDialog() },
+                                onClearAllData = { viewModel.clearAllAppData() },
+                                onToggleDarkMode = { viewModel.toggleDarkMode(it) },
+                                onEditMemberClick = { viewModel.openEditMemberDialog(it) },
+                                onDeleteMemberClick = { viewModel.removeHouseholdMember(it) },
+                                onSignInClick = { viewModel.signInWithGoogle(familyCtx) },
+                                onSignOutClick = { viewModel.signOut(familyCtx) }
+                            )
+                        }
                     }
                 }
             }
@@ -674,9 +697,87 @@ fun MainAppShell(
                 JoinHouseholdDialog(
                     currentHouseholdId = uiState.householdId,
                     onDismiss = { viewModel.dismissJoinHouseholdDialog() },
-                    onJoin = { code, name ->
-                        viewModel.joinHousehold(code, name)
+                    onSubmitInvitationLink = { linkOrToken ->
+                        viewModel.joinHouseholdWithInvitation(linkOrToken)
                     }
+                )
+            }
+
+            if (uiState.isInviteSheetOpen) {
+                val inviteCtx = androidx.compose.ui.platform.LocalContext.current
+                com.example.ui.components.InviteFamilySheet(
+                    householdName = uiState.householdName,
+                    authUser = uiState.authUser,
+                    isAuthLoading = uiState.isAuthLoading,
+                    currentUserRole = uiState.currentUserHouseholdRole,
+                    isSubmitting = uiState.inviteSheetSubmitting,
+                    errorMessage = uiState.inviteSheetError,
+                    createdInvitation = uiState.lastCreatedInvitation,
+                    createdShareLink = uiState.lastCreatedInviteLink,
+                    emailDeliveryConfigured = uiState.lastInviteEmailDeliveryConfigured,
+                    onDismiss = { viewModel.dismissInviteFamilySheet() },
+                    onSignInClick = { viewModel.signInWithGoogle(inviteCtx) },
+                    onClearError = { viewModel.clearInviteSheetError() },
+                    onSendEmailInvite = { email, name, message, role ->
+                        viewModel.sendEmailInvitation(email, name, message, role)
+                    },
+                    onGenerateShareLink = { role, message ->
+                        viewModel.generateShareableInvitationLink(role, message)
+                    },
+                    onInviteAnother = { viewModel.openInviteFamilySheet() }
+                )
+            }
+
+            if (uiState.isMemberManagementSheetOpen) {
+                com.example.ui.components.FamilyMemberManagementSheet(
+                    householdName = uiState.householdName,
+                    authUser = uiState.authUser,
+                    currentUserRole = uiState.currentUserHouseholdRole,
+                    members = uiState.members,
+                    activeMemberId = uiState.activeMember?.id,
+                    invitations = uiState.invitations,
+                    isInvitationsLoading = uiState.isInvitationsLoading,
+                    feedbackMessage = uiState.invitationFeedbackMessage,
+                    getCachedLink = { id -> viewModel.getCachedInvitationLink(id) },
+                    onDismiss = { viewModel.dismissMemberManagementSheet() },
+                    onClearFeedback = { viewModel.clearInvitationFeedback() },
+                    onAddNewMemberClick = {
+                        viewModel.dismissMemberManagementSheet()
+                        viewModel.openInviteFamilySheet()
+                    },
+                    onAcceptInviteLinkClick = {
+                        viewModel.dismissMemberManagementSheet()
+                        viewModel.openJoinHouseholdDialog()
+                    },
+                    onSwitchActiveMember = { viewModel.switchActiveMember(it) },
+                    onEditMember = {
+                        viewModel.dismissMemberManagementSheet()
+                        viewModel.openEditMemberDialog(it)
+                    },
+                    onChangeMemberRole = { member, newRole ->
+                        viewModel.updateMemberHouseholdRole(member, newRole)
+                    },
+                    onRemoveMember = { member ->
+                        viewModel.removeHouseholdMember(member)
+                    },
+                    onResendInvitation = { id, onLinkReady ->
+                        viewModel.resendInvitation(id, onLinkReady)
+                    },
+                    onRevokeInvitation = { id ->
+                        viewModel.revokeInvitation(id)
+                    }
+                )
+            }
+
+            if (uiState.invitationLandingState !is com.example.viewmodel.InvitationLandingState.Hidden) {
+                val acceptCtx = androidx.compose.ui.platform.LocalContext.current
+                com.example.ui.components.InvitationAcceptanceDialog(
+                    state = uiState.invitationLandingState,
+                    isAuthLoading = uiState.isAuthLoading,
+                    onSignInClick = { viewModel.signInWithGoogle(acceptCtx) },
+                    onAcceptClick = { viewModel.acceptPendingInvitation() },
+                    onDeclineClick = { viewModel.declinePendingInvitation() },
+                    onDismiss = { viewModel.dismissInvitationLanding() }
                 )
             }
 

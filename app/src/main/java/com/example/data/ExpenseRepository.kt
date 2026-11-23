@@ -5,13 +5,16 @@ import com.example.data.dao.ExpenseDao
 import com.example.data.dao.FamilyMemberDao
 import com.example.data.dao.HouseholdDao
 import com.example.data.dao.IncomeDao
+import com.example.data.dao.InvitationDao
 import com.example.data.model.CategoryBudgetEntity
 import com.example.data.model.ExpenseEntity
 import com.example.data.model.FamilyMemberEntity
 import com.example.data.model.HouseholdEntity
+import com.example.data.model.HouseholdRole
 import com.example.data.model.IncomeEntity
+import com.example.data.model.InvitationEntity
+import com.example.data.model.MembershipStatus
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 import kotlin.random.Random
 
 class ExpenseRepository(
@@ -19,7 +22,8 @@ class ExpenseRepository(
     private val familyMemberDao: FamilyMemberDao,
     private val categoryBudgetDao: CategoryBudgetDao,
     private val householdDao: HouseholdDao,
-    private val incomeDao: IncomeDao
+    private val incomeDao: IncomeDao,
+    private val invitationDao: InvitationDao? = null
 ) {
 
     fun getExpenses(householdId: String): Flow<List<ExpenseEntity>> {
@@ -34,6 +38,10 @@ class ExpenseRepository(
         return familyMemberDao.getMembersByHousehold(householdId)
     }
 
+    suspend fun getMembersOnce(householdId: String): List<FamilyMemberEntity> {
+        return familyMemberDao.getMembersByHouseholdOnce(householdId)
+    }
+
     fun getBudgets(householdId: String): Flow<List<CategoryBudgetEntity>> {
         return categoryBudgetDao.getBudgetsByHousehold(householdId)
     }
@@ -42,9 +50,27 @@ class ExpenseRepository(
         return householdDao.getHouseholdById(householdId)
     }
 
+    fun getInvitations(householdId: String): Flow<List<InvitationEntity>>? {
+        return invitationDao?.getInvitationsByHousehold(householdId)
+    }
+
+    suspend fun upsertInvitations(invitations: List<InvitationEntity>) {
+        invitationDao?.insertInvitations(invitations)
+    }
+
+    suspend fun upsertInvitation(invitation: InvitationEntity) {
+        invitationDao?.insertInvitation(invitation)
+    }
+
     suspend fun addIncome(income: IncomeEntity) {
         householdDao.updateLastSynced(income.householdId, System.currentTimeMillis())
         incomeDao.insertIncome(income)
+    }
+
+    suspend fun addIncomes(incomes: List<IncomeEntity>) {
+        if (incomes.isEmpty()) return
+        householdDao.updateLastSynced(incomes.first().householdId, System.currentTimeMillis())
+        incomes.forEach { incomeDao.insertIncome(it) }
     }
 
     suspend fun updateIncome(income: IncomeEntity) {
@@ -125,8 +151,8 @@ class ExpenseRepository(
         incomeDao.deleteAllIncomesForHousehold(householdId)
         familyMemberDao.deleteAllMembersForHousehold(householdId)
         categoryBudgetDao.deleteAllBudgetsForHousehold(householdId)
+        invitationDao?.deleteInvitationsForHousehold(householdId)
 
-        // Create 1 clean active profile
         val defaultMember = FamilyMemberEntity(
             id = "mem_1",
             name = "Me",
@@ -134,7 +160,10 @@ class ExpenseRepository(
             avatarColorHex = "#1E88E5",
             avatarIcon = "person",
             isCurrentActiveUser = true,
-            householdId = householdId
+            householdId = householdId,
+            householdRole = HouseholdRole.OWNER.value,
+            membershipStatus = MembershipStatus.ACTIVE.value,
+            joinedAt = System.currentTimeMillis()
         )
         familyMemberDao.insertMember(defaultMember)
 
@@ -152,14 +181,12 @@ class ExpenseRepository(
         householdDao.updateLastSynced(householdId, System.currentTimeMillis())
     }
 
-    // Generate a simulated real-time live expense sync event from another family member!
     suspend fun simulateLiveFamilyExpense(
         householdId: String,
         members: List<FamilyMemberEntity>
     ): ExpenseEntity? {
         if (members.isEmpty()) return null
 
-        // Pick a non-active or random member to simulate live activity
         val sender = members.random()
         val sampleItems = listOf(
             Triple("Groceries", "Organic Supermarket Snacks & Milk", listOf(18.50, 34.20, 52.80, 89.00)),

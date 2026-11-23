@@ -6,12 +6,25 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.AppDatabase
 import com.example.data.AuthManager
+import com.example.data.AuthUser
 import com.example.data.ExpenseRepository
+import com.example.data.GoogleSignInResult
 import com.example.data.model.CategoryBudgetEntity
 import com.example.data.model.ExpenseEntity
 import com.example.data.model.FamilyMemberEntity
 import com.example.data.model.HouseholdEntity
+import com.example.data.model.HouseholdRole
 import com.example.data.model.IncomeEntity
+import com.example.data.model.InvitationEntity
+import com.example.data.model.InvitationStatus
+import com.example.data.model.MembershipStatus
+import com.example.data.repository.FamilyInvitationRepository
+import com.example.data.repository.FirestoreInvitationCloudBackend
+import com.example.data.repository.InvitationAcceptResult
+import com.example.data.repository.InvitationActionResult
+import com.example.data.repository.InvitationCreateResult
+import com.example.data.repository.InvitationValidationResult
+import com.example.data.repository.MemberManagementResult
 import com.example.data.sync.FirestoreSyncManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -19,8 +32,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -42,6 +53,28 @@ data class BudgetNotification(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+sealed class InvitationLandingState {
+    data object Hidden : InvitationLandingState()
+    data object Loading : InvitationLandingState()
+    data class RequiresSignIn(val rawToken: String) : InvitationLandingState()
+    data class Ready(
+        val invitation: InvitationEntity,
+        val rawToken: String,
+        val isAccepting: Boolean = false,
+        val errorMessage: String? = null
+    ) : InvitationLandingState()
+
+    data class AcceptedSuccess(
+        val householdName: String,
+        val role: HouseholdRole
+    ) : InvitationLandingState()
+
+    data class Error(
+        val title: String,
+        val message: String
+    ) : InvitationLandingState()
+}
+
 data class UiState(
     val householdId: String = "FAM-1001",
     val householdName: String = "My Household",
@@ -51,7 +84,7 @@ data class UiState(
     val filteredExpenses: List<ExpenseEntity> = emptyList(),
     val incomes: List<IncomeEntity> = emptyList(),
     val totalIncomeThisMonth: Double = 0.0,
-    val transactionTypeFilter: String = "All", // "All", "Expenses", "Income"
+    val transactionTypeFilter: String = "All",
     val members: List<FamilyMemberEntity> = emptyList(),
     val activeMember: FamilyMemberEntity? = null,
     val categoryBudgets: List<CategoryBudgetEntity> = emptyList(),
@@ -63,8 +96,8 @@ data class UiState(
     val searchQuery: String = "",
     val isSyncing: Boolean = false,
     val isLiveSyncEnabled: Boolean = true,
-    val syncStatusMessage: String = "Firebase Firestore Live Sync • Connected",
-    val syncLog: List<String> = listOf("Initial real-time family Firestore session connected."),
+    val syncStatusMessage: String = "Sign in with Google for multi-device sync",
+    val syncLog: List<String> = listOf("FamSpend household ready."),
     val totalSpentToday: Double = 0.0,
     val totalSpentThisMonth: Double = 0.0,
     val monthlyBudgetLimit: Double = 3000.0,
@@ -91,14 +124,34 @@ data class UiState(
     val viewingExpense: ExpenseEntity? = null,
     val editingMember: FamilyMemberEntity? = null,
     val isDarkMode: Boolean = false,
-    val selectedExpenseIds: Set<String> = emptySet()
+    val selectedExpenseIds: Set<String> = emptySet(),
+
+    // Unified Family Invitation & Member Management State
+    val authUser: AuthUser? = null,
+    val isAuthLoading: Boolean = false,
+    val authError: String? = null,
+    val currentUserHouseholdRole: HouseholdRole = HouseholdRole.OWNER,
+    val invitations: List<InvitationEntity> = emptyList(),
+    val isInvitationsLoading: Boolean = false,
+    val isInviteSheetOpen: Boolean = false,
+    val isMemberManagementSheetOpen: Boolean = false,
+    val inviteSheetSubmitting: Boolean = false,
+    val inviteSheetError: String? = null,
+    val lastCreatedInvitation: InvitationEntity? = null,
+    val lastCreatedInviteLink: String? = null,
+    val lastInviteEmailDeliveryConfigured: Boolean = false,
+    val invitationFeedbackMessage: String? = null,
+    val pendingInvitationToken: String? = null,
+    val invitationLandingState: InvitationLandingState = InvitationLandingState.Hidden
 )
 
 class FamilyExpenseViewModel(application: Application) : AndroidViewModel(application) {
 
+    private val database: AppDatabase = AppDatabase.getDatabase(application)
     private val repository: ExpenseRepository
     private val firestoreSyncManager: FirestoreSyncManager
-    private val authManager: AuthManager = AuthManager()
+    private val invitationRepository: FamilyInvitationRepository
+    private val authManager: AuthManager = AuthManager(application)
     private var isFirebaseAuthenticated = false
     private val prefs = application.getSharedPreferences("fam_spend_prefs", Context.MODE_PRIVATE)
     private val _uiState = MutableStateFlow(UiState())
@@ -107,42 +160,152 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
     init {
         val initialDarkMode = prefs.getBoolean("is_dark_mode", false)
         val initialDailyLimit = prefs.getFloat("daily_spending_limit", 0f).toDouble()
+        val savedHouseholdId = prefs.getString("active_household_id", "FAM-1001")
+            ?.takeIf { it.isNotBlank() } ?: "FAM-1001"
+        val persistedPendingToken = prefs.getString("pending_invitation_token", null)
+            ?.takeIf { it.isNotBlank() }
+
         _uiState.value = _uiState.value.copy(
+            householdId = savedHouseholdId,
+            inviteCode = savedHouseholdId,
             isDarkMode = initialDarkMode,
-            dailySpendingLimit = initialDailyLimit
+            dailySpendingLimit = initialDailyLimit,
+            pendingInvitationToken = persistedPendingToken
         )
 
-        val database = AppDatabase.getDatabase(application)
         repository = ExpenseRepository(
             database.expenseDao(),
             database.familyMemberDao(),
             database.categoryBudgetDao(),
             database.householdDao(),
-            database.incomeDao()
+            database.incomeDao(),
+            database.invitationDao()
         )
         firestoreSyncManager = FirestoreSyncManager(application, repository)
-        
+        invitationRepository = FamilyInvitationRepository(
+            invitationDao = database.invitationDao(),
+            familyMemberDao = database.familyMemberDao(),
+            householdDao = database.householdDao(),
+            cloudBackend = FirestoreInvitationCloudBackend { firestoreSyncManager.getFirestoreInstance() }
+        )
+
         viewModelScope.launch {
-            authManager.currentUser.collect { user ->
+            authManager.authUser.collect { user ->
+                _uiState.value = _uiState.value.copy(authUser = user)
                 if (user != null) {
                     isFirebaseAuthenticated = true
-                    firestoreSyncManager.startRealtimeSync(_uiState.value.householdId) { logMsg ->
-                        addSyncLog(logMsg)
-                    }
+                    onUserAuthenticated(user)
                 } else {
                     isFirebaseAuthenticated = false
                     firestoreSyncManager.stopRealtimeSync()
-                    addSyncLog("Offline Mode: User not signed in.")
+                    _uiState.value = _uiState.value.copy(
+                        syncStatusMessage = "Sign in with Google for multi-device sync"
+                    )
+                    addSyncLog("Offline Mode: Sign in with Google to sync with family.")
                 }
             }
         }
-        
+
         observeData()
 
-        // Ensure weekly scheduled review reminder is initialized
         if (com.example.util.WeeklyReminderScheduler.isReminderEnabled(application)) {
             com.example.util.WeeklyReminderScheduler.scheduleWeeklyReminder(application)
         }
+    }
+
+    private suspend fun onUserAuthenticated(user: AuthUser) {
+        val pendingToken = _uiState.value.pendingInvitationToken
+        if (!pendingToken.isNullOrBlank()) {
+            // Preserve and immediately validate pending invitation link after sign-in
+            validateIncomingInvitation(pendingToken)
+            return
+        }
+
+        val currentState = _uiState.value
+        val localHousehold = currentState.household ?: HouseholdEntity(
+            householdId = currentState.householdId,
+            householdName = currentState.householdName,
+            inviteCode = currentState.inviteCode,
+            defaultCurrency = currentState.currencySymbol,
+            totalMonthlyBudget = currentState.monthlyBudgetLimit,
+            isLiveSyncEnabled = currentState.isLiveSyncEnabled
+        )
+
+        _uiState.value = _uiState.value.copy(
+            isSyncing = true,
+            syncStatusMessage = "Connecting to cloud household..."
+        )
+
+        val bootstrapResult = invitationRepository.bootstrapAuthenticatedHousehold(localHousehold, user)
+        bootstrapResult.onSuccess { resolvedHousehold ->
+            val oldId = currentState.householdId
+            val newId = resolvedHousehold.householdId
+
+            // If user just migrated from local default FAM-1001 into their own cloud household,
+            // carry over local expenses/incomes/budgets so zero user data is lost.
+            if (oldId == "FAM-1001" && newId != oldId && resolvedHousehold.ownerUserId == user.uid) {
+                migrateLocalDataToCloudHousehold(oldId, newId, user)
+            }
+
+            prefs.edit().putString("active_household_id", newId).apply()
+            _uiState.value = _uiState.value.copy(
+                householdId = newId,
+                householdName = resolvedHousehold.householdName,
+                inviteCode = resolvedHousehold.inviteCode,
+                household = resolvedHousehold,
+                isSyncing = false,
+                syncStatusMessage = "Firebase Firestore Live Sync • Connected"
+            )
+            startObservingHousehold(newId)
+        }.onFailure { err ->
+            _uiState.value = _uiState.value.copy(
+                isSyncing = false,
+                syncStatusMessage = "Local mode active • Cloud sync pending"
+            )
+            addSyncLog("Cloud household setup pending: ${err.localizedMessage ?: "offline"}")
+            firestoreSyncManager.startRealtimeSync(currentState.householdId) { addSyncLog(it) }
+        }
+    }
+
+    private suspend fun migrateLocalDataToCloudHousehold(
+        oldHouseholdId: String,
+        newHouseholdId: String,
+        owner: AuthUser
+    ) {
+        val localExpenses = repository.getExpenses(oldHouseholdId).firstOrNull().orEmpty()
+        localExpenses.forEach { expense ->
+            val migrated = expense.copy(householdId = newHouseholdId)
+            repository.addExpense(migrated)
+            firestoreSyncManager.syncExpenseToCloud(migrated)
+        }
+        val localIncomes = repository.getIncomes(oldHouseholdId).firstOrNull().orEmpty()
+        localIncomes.forEach { income ->
+            val migrated = income.copy(householdId = newHouseholdId)
+            repository.addIncome(migrated)
+            firestoreSyncManager.syncIncomeToCloud(migrated)
+        }
+        val localBudgets = repository.getBudgets(oldHouseholdId).firstOrNull().orEmpty()
+        localBudgets.forEach { budget ->
+            val migrated = budget.copy(householdId = newHouseholdId)
+            repository.setCategoryBudget(migrated)
+            firestoreSyncManager.syncCategoryBudgetToCloud(migrated)
+        }
+        val ownerMember = FamilyMemberEntity(
+            id = owner.uid,
+            name = owner.displayName,
+            role = "Primary",
+            avatarColorHex = "#4F46E5",
+            avatarIcon = "person",
+            isCurrentActiveUser = true,
+            householdId = newHouseholdId,
+            email = owner.email.trim().lowercase(Locale.US),
+            userId = owner.uid,
+            householdRole = HouseholdRole.OWNER.value,
+            membershipStatus = MembershipStatus.ACTIVE.value,
+            joinedAt = System.currentTimeMillis()
+        )
+        repository.addFamilyMember(ownerMember)
+        repository.setActiveMember(newHouseholdId, ownerMember.id)
     }
 
     private var observationJob: Job? = null
@@ -178,10 +341,37 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
 
             launch {
                 repository.getMembers(hId).collect { membersList ->
-                    val active = membersList.find { it.isCurrentActiveUser } ?: membersList.firstOrNull()
+                    val currentUid = _uiState.value.authUser?.uid
+                    val matchedAuthMember = if (!currentUid.isNullOrBlank()) {
+                        membersList.find { it.userId == currentUid || it.id == currentUid }
+                    } else {
+                        null
+                    }
+                    val active = membersList.find { it.isCurrentActiveUser }
+                        ?: matchedAuthMember
+                        ?: membersList.firstOrNull()
+
+                    val resolvedRole = when {
+                        matchedAuthMember != null -> matchedAuthMember.parsedHouseholdRole()
+                        _uiState.value.household?.ownerUserId == currentUid && !currentUid.isNullOrBlank() ->
+                            HouseholdRole.OWNER
+                        active != null -> active.parsedHouseholdRole()
+                        else -> HouseholdRole.OWNER
+                    }
+
                     _uiState.value = _uiState.value.copy(
                         members = membersList,
-                        activeMember = active
+                        activeMember = active,
+                        currentUserHouseholdRole = resolvedRole
+                    )
+                }
+            }
+
+            launch {
+                invitationRepository.observeInvitations(hId).collect { invitationsList ->
+                    _uiState.value = _uiState.value.copy(
+                        invitations = invitationsList,
+                        isInvitationsLoading = false
                     )
                 }
             }
@@ -251,6 +441,425 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    // =========================================================================
+    // Unified Family Invitation & Member Management Workflows
+    // =========================================================================
+
+    fun openInviteFamilySheet() {
+        _uiState.value = _uiState.value.copy(
+            isInviteSheetOpen = true,
+            inviteSheetError = null,
+            inviteSheetSubmitting = false,
+            lastCreatedInvitation = null,
+            lastCreatedInviteLink = null
+        )
+    }
+
+    fun dismissInviteFamilySheet() {
+        _uiState.value = _uiState.value.copy(
+            isInviteSheetOpen = false,
+            inviteSheetError = null,
+            inviteSheetSubmitting = false,
+            lastCreatedInvitation = null,
+            lastCreatedInviteLink = null
+        )
+    }
+
+    fun openMemberManagementSheet() {
+        _uiState.value = _uiState.value.copy(
+            isMemberManagementSheetOpen = true,
+            invitationFeedbackMessage = null
+        )
+    }
+
+    fun dismissMemberManagementSheet() {
+        _uiState.value = _uiState.value.copy(
+            isMemberManagementSheetOpen = false,
+            invitationFeedbackMessage = null
+        )
+    }
+
+    fun clearInvitationFeedback() {
+        _uiState.value = _uiState.value.copy(invitationFeedbackMessage = null)
+    }
+
+    fun clearInviteSheetError() {
+        _uiState.value = _uiState.value.copy(inviteSheetError = null)
+    }
+
+    fun sendEmailInvitation(
+        email: String,
+        memberName: String,
+        personalMessage: String,
+        role: HouseholdRole = HouseholdRole.MEMBER
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val state = _uiState.value
+            _uiState.value = state.copy(
+                inviteSheetSubmitting = true,
+                inviteSheetError = null,
+                lastCreatedInvitation = null,
+                lastCreatedInviteLink = null
+            )
+
+            val result = invitationRepository.createInvitation(
+                householdId = state.householdId,
+                householdName = state.householdName,
+                inviter = state.authUser,
+                inviterRole = state.currentUserHouseholdRole,
+                inviteeEmail = email,
+                inviteeName = memberName,
+                personalMessage = personalMessage,
+                invitedRole = role
+            )
+
+            when (result) {
+                is InvitationCreateResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        inviteSheetSubmitting = false,
+                        inviteSheetError = null,
+                        lastCreatedInvitation = result.invitation,
+                        lastCreatedInviteLink = result.shareLink,
+                        lastInviteEmailDeliveryConfigured = result.emailDeliveryConfigured
+                    )
+                    addSyncLog("Created invitation for ${result.invitation.inviteeEmail}")
+                }
+                is InvitationCreateResult.Error -> {
+                    _uiState.value = _uiState.value.copy(
+                        inviteSheetSubmitting = false,
+                        inviteSheetError = result.message,
+                        lastCreatedInvitation = null,
+                        lastCreatedInviteLink = null
+                    )
+                }
+            }
+        }
+    }
+
+    fun generateShareableInvitationLink(
+        role: HouseholdRole = HouseholdRole.MEMBER,
+        personalMessage: String = ""
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val state = _uiState.value
+            _uiState.value = state.copy(
+                inviteSheetSubmitting = true,
+                inviteSheetError = null,
+                lastCreatedInvitation = null,
+                lastCreatedInviteLink = null
+            )
+
+            val result = invitationRepository.createInvitation(
+                householdId = state.householdId,
+                householdName = state.householdName,
+                inviter = state.authUser,
+                inviterRole = state.currentUserHouseholdRole,
+                inviteeEmail = null,
+                inviteeName = "",
+                personalMessage = personalMessage,
+                invitedRole = role
+            )
+
+            when (result) {
+                is InvitationCreateResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        inviteSheetSubmitting = false,
+                        inviteSheetError = null,
+                        lastCreatedInvitation = result.invitation,
+                        lastCreatedInviteLink = result.shareLink,
+                        lastInviteEmailDeliveryConfigured = result.emailDeliveryConfigured
+                    )
+                    addSyncLog("Generated secure single-use invitation link for ${state.householdName}")
+                }
+                is InvitationCreateResult.Error -> {
+                    _uiState.value = _uiState.value.copy(
+                        inviteSheetSubmitting = false,
+                        inviteSheetError = result.message,
+                        lastCreatedInvitation = null,
+                        lastCreatedInviteLink = null
+                    )
+                }
+            }
+        }
+    }
+
+    fun getCachedInvitationLink(invitationId: String): String? {
+        return invitationRepository.getCachedShareLink(invitationId)
+    }
+
+    fun resendInvitation(
+        invitationId: String,
+        onLinkReady: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val state = _uiState.value
+            when (
+                val result = invitationRepository.resendInvitation(
+                    invitationId = invitationId,
+                    caller = state.authUser,
+                    callerRole = state.currentUserHouseholdRole
+                )
+            ) {
+                is InvitationActionResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        invitationFeedbackMessage = result.message
+                    )
+                    addSyncLog(result.message)
+                    result.updatedShareLink?.let { link ->
+                        launch(Dispatchers.Main) { onLinkReady(link) }
+                    }
+                }
+                is InvitationActionResult.Error -> {
+                    _uiState.value = _uiState.value.copy(
+                        invitationFeedbackMessage = result.message
+                    )
+                }
+            }
+        }
+    }
+
+    fun revokeInvitation(invitationId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val state = _uiState.value
+            when (
+                val result = invitationRepository.revokeInvitation(
+                    invitationId = invitationId,
+                    caller = state.authUser,
+                    callerRole = state.currentUserHouseholdRole
+                )
+            ) {
+                is InvitationActionResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        invitationFeedbackMessage = result.message
+                    )
+                    addSyncLog("Revoked pending family invitation.")
+                }
+                is InvitationActionResult.Error -> {
+                    _uiState.value = _uiState.value.copy(
+                        invitationFeedbackMessage = result.message
+                    )
+                }
+            }
+        }
+    }
+
+    fun updateMemberHouseholdRole(member: FamilyMemberEntity, newRole: HouseholdRole) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val state = _uiState.value
+            when (
+                val result = invitationRepository.updateMemberRole(
+                    householdId = state.householdId,
+                    targetMember = member,
+                    newRole = newRole,
+                    callerUserId = state.authUser?.uid,
+                    callerRole = state.currentUserHouseholdRole
+                )
+            ) {
+                is MemberManagementResult.Success -> {
+                    _uiState.value = _uiState.value.copy(invitationFeedbackMessage = result.message)
+                    addSyncLog(result.message)
+                }
+                is MemberManagementResult.Error -> {
+                    _uiState.value = _uiState.value.copy(invitationFeedbackMessage = result.message)
+                }
+            }
+        }
+    }
+
+    fun removeHouseholdMember(member: FamilyMemberEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val state = _uiState.value
+            when (
+                val result = invitationRepository.removeMember(
+                    householdId = state.householdId,
+                    targetMember = member,
+                    callerUserId = state.authUser?.uid,
+                    callerRole = state.currentUserHouseholdRole
+                )
+            ) {
+                is MemberManagementResult.Success -> {
+                    _uiState.value = _uiState.value.copy(invitationFeedbackMessage = result.message)
+                    addSyncLog(result.message)
+                    if (_uiState.value.activeMember?.id == member.id) {
+                        val remaining = repository.getMembers(state.householdId).firstOrNull()
+                        remaining?.firstOrNull()?.let { switchActiveMember(it.id) }
+                    }
+                }
+                is MemberManagementResult.Error -> {
+                    _uiState.value = _uiState.value.copy(invitationFeedbackMessage = result.message)
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Deep-Link / Recipient Invitation Acceptance Workflow
+    // =========================================================================
+
+    fun handleIncomingInvitationLink(rawLinkOrToken: String) {
+        val clean = rawLinkOrToken.trim()
+        if (clean.isEmpty()) return
+
+        // Persist token securely in app-private prefs so it survives auth redirect/recreation
+        prefs.edit().putString("pending_invitation_token", clean).apply()
+        _uiState.value = _uiState.value.copy(
+            pendingInvitationToken = clean,
+            isJoinHouseholdDialogOpen = false,
+            invitationLandingState = InvitationLandingState.Loading
+        )
+
+        viewModelScope.launch(Dispatchers.IO) {
+            validateIncomingInvitation(clean)
+        }
+    }
+
+    private suspend fun validateIncomingInvitation(rawLinkOrToken: String) {
+        val user = _uiState.value.authUser
+        when (val validation = invitationRepository.validateInvitationToken(rawLinkOrToken, user)) {
+            is InvitationValidationResult.RequiresSignIn -> {
+                _uiState.value = _uiState.value.copy(
+                    pendingInvitationToken = validation.rawToken,
+                    invitationLandingState = InvitationLandingState.RequiresSignIn(validation.rawToken)
+                )
+            }
+            is InvitationValidationResult.Valid -> {
+                _uiState.value = _uiState.value.copy(
+                    pendingInvitationToken = validation.rawToken,
+                    invitationLandingState = InvitationLandingState.Ready(
+                        invitation = validation.invitation,
+                        rawToken = validation.rawToken
+                    )
+                )
+            }
+            is InvitationValidationResult.Expired -> {
+                clearPendingInvitationToken()
+                _uiState.value = _uiState.value.copy(
+                    invitationLandingState = InvitationLandingState.Error(
+                        title = "Invitation Expired",
+                        message = validation.message
+                    )
+                )
+            }
+            is InvitationValidationResult.Revoked -> {
+                clearPendingInvitationToken()
+                _uiState.value = _uiState.value.copy(
+                    invitationLandingState = InvitationLandingState.Error(
+                        title = "Invitation Unavailable",
+                        message = validation.message
+                    )
+                )
+            }
+            is InvitationValidationResult.AlreadyUsed -> {
+                clearPendingInvitationToken()
+                _uiState.value = _uiState.value.copy(
+                    invitationLandingState = InvitationLandingState.Error(
+                        title = "Invitation Already Used",
+                        message = validation.message
+                    )
+                )
+            }
+            is InvitationValidationResult.Invalid -> {
+                clearPendingInvitationToken()
+                _uiState.value = _uiState.value.copy(
+                    invitationLandingState = InvitationLandingState.Error(
+                        title = "Invalid Invitation",
+                        message = validation.message
+                    )
+                )
+            }
+        }
+    }
+
+    fun acceptPendingInvitation() {
+        val currentLanding = _uiState.value.invitationLandingState as? InvitationLandingState.Ready ?: return
+        if (currentLanding.isAccepting) return
+
+        _uiState.value = _uiState.value.copy(
+            invitationLandingState = currentLanding.copy(isAccepting = true, errorMessage = null)
+        )
+
+        viewModelScope.launch(Dispatchers.IO) {
+            when (
+                val result = invitationRepository.acceptInvitation(
+                    rawToken = currentLanding.rawToken,
+                    currentUser = _uiState.value.authUser
+                )
+            ) {
+                is InvitationAcceptResult.Accepted -> {
+                    clearPendingInvitationToken()
+                    prefs.edit().putString("active_household_id", result.householdId).apply()
+                    _uiState.value = _uiState.value.copy(
+                        householdId = result.householdId,
+                        householdName = result.householdName,
+                        inviteCode = result.householdId,
+                        currentUserHouseholdRole = result.role,
+                        syncStatusMessage = "Firebase Firestore Live Sync • Connected",
+                        invitationLandingState = InvitationLandingState.AcceptedSuccess(
+                            householdName = result.householdName,
+                            role = result.role
+                        )
+                    )
+                    addSyncLog("Welcome to ${result.householdName}! Real-time sync active.")
+                    startObservingHousehold(result.householdId)
+                }
+                InvitationAcceptResult.RequiresSignIn -> {
+                    _uiState.value = _uiState.value.copy(
+                        invitationLandingState = InvitationLandingState.RequiresSignIn(currentLanding.rawToken)
+                    )
+                }
+                is InvitationAcceptResult.EmailMismatch -> {
+                    _uiState.value = _uiState.value.copy(
+                        invitationLandingState = currentLanding.copy(
+                            isAccepting = false,
+                            errorMessage = result.expectedEmail
+                        )
+                    )
+                }
+                is InvitationAcceptResult.AlreadyMember -> {
+                    clearPendingInvitationToken()
+                    _uiState.value = _uiState.value.copy(
+                        invitationLandingState = InvitationLandingState.Error(
+                            title = "Already a Member",
+                            message = result.message
+                        )
+                    )
+                }
+                is InvitationAcceptResult.Error -> {
+                    _uiState.value = _uiState.value.copy(
+                        invitationLandingState = currentLanding.copy(
+                            isAccepting = false,
+                            errorMessage = result.message
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    fun declinePendingInvitation() {
+        clearPendingInvitationToken()
+        _uiState.value = _uiState.value.copy(
+            invitationLandingState = InvitationLandingState.Hidden
+        )
+        addSyncLog("Declined household invitation.")
+    }
+
+    fun dismissInvitationLanding() {
+        clearPendingInvitationToken()
+        _uiState.value = _uiState.value.copy(
+            invitationLandingState = InvitationLandingState.Hidden
+        )
+    }
+
+    private fun clearPendingInvitationToken() {
+        prefs.edit().remove("pending_invitation_token").apply()
+        _uiState.value = _uiState.value.copy(pendingInvitationToken = null)
+    }
+
+    // =========================================================================
+    // Existing App Features (Preserved Intact)
+    // =========================================================================
+
     private fun applyFilters() {
         val state = _uiState.value
         var list = state.expenses
@@ -305,10 +914,10 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
             val q = state.searchQuery.lowercase()
             list = list.filter {
                 it.description.lowercase().contains(q) ||
-                it.category.lowercase().contains(q) ||
-                it.paidByMemberName.lowercase().contains(q) ||
-                it.note.lowercase().contains(q) ||
-                it.amount.toString().contains(q)
+                    it.category.lowercase().contains(q) ||
+                    it.paidByMemberName.lowercase().contains(q) ||
+                    it.note.lowercase().contains(q) ||
+                    it.amount.toString().contains(q)
             }
         }
 
@@ -390,7 +999,7 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
                 repository.updateExpense(updated)
                 firestoreSyncManager.syncExpenseToCloud(updated)
                 val recurringText = if (isRecurring) " [Recurring $recurringFrequency on Day $recurringDayOfMonth]" else ""
-                addSyncLog("Updated expense: ${description} (${state.currencySymbol}${amount})${recurringText}")
+                addSyncLog("Updated expense: $description (${state.currencySymbol}$amount)$recurringText")
             } else {
                 val newExp = ExpenseEntity(
                     amount = amount,
@@ -413,7 +1022,7 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
                 repository.addExpense(newExp)
                 firestoreSyncManager.syncExpenseToCloud(newExp)
                 val recurringText = if (isRecurring) " [Recurring $recurringFrequency on Day $recurringDayOfMonth]" else ""
-                addSyncLog("Added expense: ${description} (${state.currencySymbol}${amount}) by ${paidByMemberName}${recurringText}")
+                addSyncLog("Added expense: $description (${state.currencySymbol}$amount) by $paidByMemberName$recurringText")
             }
 
             _uiState.value = _uiState.value.copy(
@@ -455,7 +1064,6 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
     private fun checkAndAutoCreateRecurringExpenses(expensesList: List<ExpenseEntity>) {
         if (expensesList.isEmpty()) return
 
-        // Find recurring template expenses (master recurring definitions)
         val recurringTemplates = expensesList.filter { it.isRecurring && !it.isAutoCreated }
         if (recurringTemplates.isEmpty()) return
 
@@ -464,26 +1072,20 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
         val sdfMonth = SimpleDateFormat("yyyyMM", Locale.getDefault())
         val currentMonthStr = sdfMonth.format(cal.time)
 
-        
         for (template in recurringTemplates) {
             val targetDay = template.recurringDayOfMonth.coerceIn(1, 31)
-            val templateMonthStr = sdfMonth.format(java.util.Date(template.timestamp))
+            val templateMonthStr = sdfMonth.format(Date(template.timestamp))
 
-            // Do not auto-create if the template itself is for the current month (it acts as this month's instance)
             if (templateMonthStr == currentMonthStr) continue
-            
-            // Do not auto-create if the template's first occurrence is in the future
             if (template.timestamp > cal.timeInMillis) continue
 
-            // Check if an auto-created instance of this expense already exists in the current month
             val alreadyCreatedThisMonth = expensesList.any { exp ->
                 exp.isAutoCreated &&
-                exp.description.equals(template.description, ignoreCase = true) &&
-                exp.category.equals(template.category, ignoreCase = true) &&
-                sdfMonth.format(java.util.Date(exp.timestamp)) == currentMonthStr
+                    exp.description.equals(template.description, ignoreCase = true) &&
+                    exp.category.equals(template.category, ignoreCase = true) &&
+                    sdfMonth.format(Date(exp.timestamp)) == currentMonthStr
             }
 
-            // Auto-create if not created yet and today is >= set day of month
             if (!alreadyCreatedThisMonth && currentDayOfMonth >= targetDay) {
                 viewModelScope.launch(Dispatchers.IO) {
                     val autoCal = Calendar.getInstance()
@@ -519,7 +1121,7 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
         viewModelScope.launch(Dispatchers.IO) {
             repository.deleteExpense(expense)
             firestoreSyncManager.deleteExpenseFromCloud(expense)
-            addSyncLog("Deleted expense: ${expense.description} ($${expense.amount})")
+            addSyncLog("Deleted expense: ${expense.description} (${expense.currencySymbol}${expense.amount})")
         }
     }
 
@@ -543,12 +1145,11 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
             if (selectedIds.isEmpty()) return@launch
 
             val expensesToDelete = _uiState.value.expenses.filter { it.id in selectedIds }
-            
             expensesToDelete.forEach { expense ->
                 repository.deleteExpense(expense)
                 firestoreSyncManager.deleteExpenseFromCloud(expense)
             }
-            
+
             addSyncLog("Deleted ${expensesToDelete.size} selected expenses")
             _uiState.value = _uiState.value.copy(selectedExpenseIds = emptySet())
         }
@@ -558,7 +1159,7 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
         viewModelScope.launch(Dispatchers.IO) {
             repository.addExpense(expense)
             firestoreSyncManager.syncExpenseToCloud(expense)
-            addSyncLog("Restored expense: ${expense.description} ($${expense.amount})")
+            addSyncLog("Restored expense: ${expense.description}")
         }
     }
 
@@ -566,7 +1167,7 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
         viewModelScope.launch(Dispatchers.IO) {
             val hId = _uiState.value.householdId
             repository.clearAllAppData(hId)
-            addSyncLog("Cleared all app data completely. Fresh clean slate created.")
+            addSyncLog("Cleared all local app data completely. Fresh clean slate created.")
             _uiState.value = _uiState.value.copy(
                 searchQuery = "",
                 selectedCategoryFilter = null,
@@ -662,6 +1263,7 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
                 currencySymbol = state.currencySymbol
             )
             repository.addIncome(income)
+            firestoreSyncManager.syncIncomeToCloud(income)
             addSyncLog("Added income: $source (${state.currencySymbol}${String.format(Locale.US, "%,.2f", amount)}) received by $receivedByName")
 
             _uiState.value = _uiState.value.copy(
@@ -677,6 +1279,7 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
     fun deleteIncome(income: IncomeEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.deleteIncome(income)
+            firestoreSyncManager.deleteIncomeFromCloud(income)
             addSyncLog("Deleted income: ${income.source}")
         }
     }
@@ -755,7 +1358,7 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun openAddMemberDialog() {
-        _uiState.value = _uiState.value.copy(isAddMemberDialogOpen = true)
+        openInviteFamilySheet()
     }
 
     fun dismissAddMemberDialog() {
@@ -779,6 +1382,12 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
     fun addFamilyMember(name: String, role: String, avatarColorHex: String, monthlyGoal: Double) {
         viewModelScope.launch(Dispatchers.IO) {
             val state = _uiState.value
+            if (!state.currentUserHouseholdRole.canInviteMembers()) {
+                _uiState.value = state.copy(
+                    invitationFeedbackMessage = "Only Owners and Admins can add members."
+                )
+                return@launch
+            }
             val newMember = FamilyMemberEntity(
                 id = "mem_${System.currentTimeMillis()}",
                 name = name,
@@ -787,11 +1396,14 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
                 avatarIcon = listOf("person", "face", "star", "favorite").random(),
                 isCurrentActiveUser = false,
                 householdId = state.householdId,
-                monthlyContributionGoal = monthlyGoal
+                monthlyContributionGoal = monthlyGoal,
+                householdRole = HouseholdRole.MEMBER.value,
+                membershipStatus = MembershipStatus.ACTIVE.value,
+                joinedAt = System.currentTimeMillis()
             )
             repository.addFamilyMember(newMember)
             firestoreSyncManager.syncFamilyMemberToCloud(newMember)
-            addSyncLog("Added family member: ${name} (${role})")
+            addSyncLog("Added family profile: $name ($role)")
             _uiState.value = _uiState.value.copy(isAddMemberDialogOpen = false)
         }
     }
@@ -807,22 +1419,13 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
             )
             repository.updateFamilyMember(updatedMember)
             firestoreSyncManager.syncFamilyMemberToCloud(updatedMember)
-            addSyncLog("Updated family member: ${name}")
+            addSyncLog("Updated family member: $name")
             dismissEditMemberDialog()
         }
     }
 
     fun deleteMember(member: FamilyMemberEntity) {
-        viewModelScope.launch(Dispatchers.IO) {
-            repository.deleteFamilyMember(member)
-            firestoreSyncManager.deleteFamilyMemberFromCloud(member)
-            addSyncLog("Removed family member: ${member.name}")
-            if (_uiState.value.activeMember?.id == member.id) {
-                // If active member deleted, select the first available member
-                val members = repository.getMembers(_uiState.value.householdId).firstOrNull()
-                members?.firstOrNull()?.let { switchActiveMember(it.id) }
-            }
-        }
+        removeHouseholdMember(member)
     }
 
     fun openEditBudgetDialog() {
@@ -857,7 +1460,8 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
                 householdId = _uiState.value.householdId
             )
             repository.setCategoryBudget(budget)
-            addSyncLog("Updated budget for ${categoryName}: $${monthlyLimit}")
+            firestoreSyncManager.syncCategoryBudgetToCloud(budget)
+            addSyncLog("Updated budget for $categoryName: ${_uiState.value.currencySymbol}$monthlyLimit")
         }
     }
 
@@ -868,7 +1472,7 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
             val updatedH = currentH.copy(totalMonthlyBudget = newLimit)
             repository.updateHousehold(updatedH)
             firestoreSyncManager.syncHouseholdToCloud(updatedH)
-            addSyncLog("Set total family monthly budget limit to $${newLimit}")
+            addSyncLog("Set total family monthly budget limit to ${state.currencySymbol}$newLimit")
         }
     }
 
@@ -878,19 +1482,29 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
             val currentH = state.household ?: HouseholdEntity(householdId = state.householdId)
             val updatedH = currentH.copy(isLiveSyncEnabled = enabled)
             repository.updateHousehold(updatedH)
+            if (enabled && isFirebaseAuthenticated) {
+                firestoreSyncManager.startRealtimeSync(state.householdId) { addSyncLog(it) }
+            } else if (!enabled) {
+                firestoreSyncManager.stopRealtimeSync()
+            }
             addSyncLog(if (enabled) "Real-time live sync enabled." else "Real-time live sync paused.")
         }
     }
 
     fun triggerManualSync() {
         viewModelScope.launch(Dispatchers.IO) {
-            _uiState.value = _uiState.value.copy(isSyncing = true, syncStatusMessage = "Syncing with cloud family node...")
-            delay(1200)
+            _uiState.value = _uiState.value.copy(isSyncing = true, syncStatusMessage = "Syncing with cloud household...")
+            firestoreSyncManager.triggerFullReSync()
+            delay(800)
             repository.updateLastSynced(_uiState.value.householdId)
             addSyncLog("Manual sync complete. All family devices up to date.")
             _uiState.value = _uiState.value.copy(
                 isSyncing = false,
-                syncStatusMessage = "Real-time P2P sync active • Up to date"
+                syncStatusMessage = if (isFirebaseAuthenticated) {
+                    "Firebase Firestore Live Sync • Connected"
+                } else {
+                    "Sign in with Google for multi-device sync"
+                }
             )
         }
     }
@@ -898,42 +1512,31 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
     fun simulateLiveFamilyTransaction() {
         viewModelScope.launch(Dispatchers.IO) {
             val state = _uiState.value
-            _uiState.value = _uiState.value.copy(isSyncing = true, syncStatusMessage = "Incoming live transaction...")
+            _uiState.value = _uiState.value.copy(isSyncing = true, syncStatusMessage = "Syncing household activity...")
             val newExpense = repository.simulateLiveFamilyExpense(state.householdId, state.members)
-            delay(800)
+            delay(600)
             if (newExpense != null) {
                 firestoreSyncManager.syncExpenseToCloud(newExpense)
                 val timeStr = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date())
-                addSyncLog("⚡ [LIVE SYNC] ${newExpense.paidByMemberName} logged $${String.format(Locale.US, "%.2f", newExpense.amount)} for ${newExpense.category} ($timeStr)")
+                addSyncLog("Logged ${newExpense.paidByMemberName}: ${state.currencySymbol}${String.format(Locale.US, "%.2f", newExpense.amount)} for ${newExpense.category} ($timeStr)")
             }
             _uiState.value = _uiState.value.copy(
                 isSyncing = false,
-                syncStatusMessage = "Firebase Firestore Live Sync • Connected"
+                syncStatusMessage = if (isFirebaseAuthenticated) {
+                    "Firebase Firestore Live Sync • Connected"
+                } else {
+                    "Sign in with Google for multi-device sync"
+                }
             )
         }
     }
 
-    fun joinHousehold(newHouseholdId: String, newHouseholdName: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val cleanId = newHouseholdId.trim().uppercase()
-            if (cleanId.isNotBlank()) {
-                val newHousehold = HouseholdEntity(
-                    householdId = cleanId,
-                    householdName = newHouseholdName.ifBlank { "Household $cleanId" },
-                    inviteCode = cleanId,
-                    defaultCurrency = _uiState.value.currencySymbol,
-                    totalMonthlyBudget = 3000.0,
-                    lastSyncedTimestamp = System.currentTimeMillis()
-                )
-                repository.updateHousehold(newHousehold)
-                _uiState.value = _uiState.value.copy(
-                    householdId = cleanId,
-                    isJoinHouseholdDialogOpen = false
-                )
-                addSyncLog("Joined household ${cleanId} (${newHousehold.householdName})")
-                startObservingHousehold(cleanId)
-            }
-        }
+    /**
+     * Routes incoming invitation links/tokens securely through the validated invitation acceptance workflow.
+     * Prevents unauthorized household switching by raw household ID.
+     */
+    fun joinHouseholdWithInvitation(rawInviteLinkOrToken: String) {
+        handleIncomingInvitationLink(rawInviteLinkOrToken)
     }
 
     fun openJoinHouseholdDialog() {
@@ -972,7 +1575,6 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
             repository.updateHousehold(updated)
             firestoreSyncManager.syncHouseholdToCloud(updated)
 
-            // Also update expenses currencySymbol in repository to keep synced
             val expensesList = _uiState.value.expenses
             expensesList.forEach { exp ->
                 if (exp.currencySymbol != cleanSymbol) {
@@ -999,7 +1601,7 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
         val currentNotified = _uiState.value.lastNotifiedThreshold
 
         if (ratio >= 1.0) {
-            val title = "🚨 100% Monthly Budget Exceeded!"
+            val title = "100% Monthly Budget Exceeded!"
             val msg = "Alert: You have consumed $percent% of your monthly budget ($formattedSpent of $formattedLimit)!"
             val notif = BudgetNotification(
                 level = BudgetAlertLevel.EXCEEDED_100,
@@ -1017,10 +1619,10 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
             )
             if (shouldNotify) {
                 sendSystemBudgetNotification(getApplication(), title, msg, 1001)
-                addSyncLog("🚨 ALERT TRIGGERED: 100% Budget Exceeded ($percent% - $formattedSpent / $formattedLimit)")
+                addSyncLog("ALERT TRIGGERED: 100% Budget Exceeded ($percent% - $formattedSpent / $formattedLimit)")
             }
         } else if (ratio >= 0.8) {
-            val title = "⚠️ 80% Monthly Budget Warning"
+            val title = "80% Monthly Budget Warning"
             val msg = "Warning: You have reached $percent% of your monthly budget ($formattedSpent of $formattedLimit)."
             val notif = BudgetNotification(
                 level = BudgetAlertLevel.WARNING_80,
@@ -1038,10 +1640,9 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
             )
             if (shouldNotify) {
                 sendSystemBudgetNotification(getApplication(), title, msg, 1000)
-                addSyncLog("⚠️ WARNING TRIGGERED: 80% Budget Threshold Reached ($percent% - $formattedSpent / $formattedLimit)")
+                addSyncLog("WARNING TRIGGERED: 80% Budget Threshold Reached ($percent% - $formattedSpent / $formattedLimit)")
             }
         } else {
-            // Budget under 80%
             _uiState.value = _uiState.value.copy(
                 budgetNotification = null,
                 isBudgetAlertDismissed = false,
@@ -1057,15 +1658,14 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
             val todayStr = sdfDay.format(Date())
             val lastNotified = prefs.getString("last_daily_notified_date", "")
             if (lastNotified != todayStr) {
-                // Trigger notification
                 val formattedSpent = "$currencySymbol${String.format(Locale.US, "%.2f", spentToday)}"
                 val formattedLimit = "$currencySymbol${String.format(Locale.US, "%.2f", limit)}"
                 val title = "Daily Spending Limit Exceeded!"
                 val msg = "You have spent $formattedSpent today, exceeding your daily limit of $formattedLimit."
                 sendSystemBudgetNotification(getApplication(), title, msg, 2001)
-                
+
                 prefs.edit().putString("last_daily_notified_date", todayStr).apply()
-                addSyncLog("🚨 DAILY LIMIT TRIGGERED: $formattedSpent / $formattedLimit")
+                addSyncLog("DAILY LIMIT TRIGGERED: $formattedSpent / $formattedLimit")
             }
         }
     }
@@ -1074,11 +1674,11 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
         prefs.edit().putFloat("daily_spending_limit", newLimit.toFloat()).apply()
         _uiState.value = _uiState.value.copy(dailySpendingLimit = newLimit)
         checkDailyBudgetAlert(_uiState.value.totalSpentToday, newLimit, _uiState.value.currencySymbol)
-        addSyncLog("Set personal daily spending limit to $${newLimit}")
+        addSyncLog("Set personal daily spending limit to ${_uiState.value.currencySymbol}$newLimit")
     }
 
     @android.annotation.SuppressLint("MissingPermission")
-    private fun sendSystemBudgetNotification(context: android.content.Context, title: String, message: String, notificationId: Int) {
+    private fun sendSystemBudgetNotification(context: Context, title: String, message: String, notificationId: Int) {
         try {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                 if (androidx.core.content.ContextCompat.checkSelfPermission(
@@ -1089,7 +1689,7 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
                     return
                 }
             }
-            val notificationManager = context.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager ?: return
+            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager ?: return
             val channelId = "famspend_budget_alerts"
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                 val channel = android.app.NotificationChannel(
@@ -1111,8 +1711,8 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
                 .setAutoCancel(true)
 
             notificationManager.notify(notificationId, builder.build())
-        } catch (e: Exception) {
-            // Fallback gracefully if notifications restricted
+        } catch (_: Exception) {
+            // Fallback gracefully if notifications are restricted
         }
     }
 
@@ -1123,18 +1723,51 @@ class FamilyExpenseViewModel(application: Application) : AndroidViewModel(applic
         _uiState.value = _uiState.value.copy(syncLog = updated)
     }
 
-    private fun startPeriodicSyncSimulation() {
-        // Disabled background simulation so no random expenses are added automatically.
-    }
-
-    fun signInWithGoogle(context: android.content.Context) {
+    fun signInWithGoogle(context: Context) {
         viewModelScope.launch {
-            val result = authManager.signInWithGoogle(context)
-            if (result.isSuccess) {
-                addSyncLog("Successfully signed in with Google")
-            } else {
-                addSyncLog("Failed to sign in with Google: ${result.exceptionOrNull()?.message}")
+            _uiState.value = _uiState.value.copy(isAuthLoading = true, authError = null)
+            when (val result = authManager.signInWithGoogle(context)) {
+                is GoogleSignInResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        isAuthLoading = false,
+                        authError = null,
+                        authUser = result.user
+                    )
+                    addSyncLog("Signed in as ${result.user.displayName} (${result.user.email})")
+                }
+                GoogleSignInResult.Cancelled -> {
+                    _uiState.value = _uiState.value.copy(isAuthLoading = false)
+                }
+                is GoogleSignInResult.Error -> {
+                    _uiState.value = _uiState.value.copy(
+                        isAuthLoading = false,
+                        authError = result.message
+                    )
+                    addSyncLog("Google Sign-In error: ${result.message}")
+                }
             }
         }
+    }
+
+    fun signOut(context: Context) {
+        viewModelScope.launch {
+            firestoreSyncManager.stopRealtimeSync()
+            authManager.signOut(context)
+            _uiState.value = _uiState.value.copy(
+                authUser = null,
+                syncStatusMessage = "Sign in with Google for multi-device sync"
+            )
+            addSyncLog("Signed out of Google account.")
+        }
+    }
+
+    fun clearAuthError() {
+        _uiState.value = _uiState.value.copy(authError = null)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        authManager.cleanup()
+        firestoreSyncManager.cleanup()
     }
 }

@@ -1,0 +1,184 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated user account profile and active household pointer.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "activeHouseholdId": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "email", "activeHouseholdId", "updatedAt"]
+    },
+    "Household": {
+      "title": "Household",
+      "description": "Shared family household container for budgets, expenses, incomes, and members.",
+      "type": "object",
+      "properties": {
+        "householdId": { "type": "string" },
+        "householdName": { "type": "string" },
+        "inviteCode": { "type": "string" },
+        "defaultCurrency": { "type": "string" },
+        "totalMonthlyBudget": { "type": "number" },
+        "lastSyncedTimestamp": { "type": "number" },
+        "isLiveSyncEnabled": { "type": "boolean" },
+        "ownerUserId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["householdId", "householdName", "ownerUserId", "defaultCurrency", "totalMonthlyBudget"]
+    },
+    "FamilyMember": {
+      "title": "FamilyMember",
+      "description": "Household membership record with RBAC role and display metadata.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "householdRole": { "type": "string", "enum": ["OWNER", "ADMIN", "MEMBER"] },
+        "membershipStatus": { "type": "string", "enum": ["ACTIVE", "REMOVED"] },
+        "avatarColorHex": { "type": "string" },
+        "avatarIcon": { "type": "string" },
+        "householdId": { "type": "string" },
+        "monthlyContributionGoal": { "type": "number" },
+        "acceptedInvitationHash": { "type": "string" },
+        "joinedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "role", "householdRole", "membershipStatus", "householdId"]
+    },
+    "Invitation": {
+      "title": "Invitation",
+      "description": "Cryptographically hashed single-use household invitation.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "householdId": { "type": "string" },
+        "householdName": { "type": "string" },
+        "inviterUserId": { "type": "string" },
+        "inviterName": { "type": "string" },
+        "inviteeEmail": { "type": "string" },
+        "inviteeName": { "type": "string" },
+        "personalMessage": { "type": "string" },
+        "invitationTokenHash": { "type": "string" },
+        "role": { "type": "string", "enum": ["ADMIN", "MEMBER"] },
+        "status": { "type": "string", "enum": ["PENDING", "ACCEPTED", "EXPIRED", "REVOKED"] },
+        "adminUids": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "acceptedAt": { "type": "string", "format": "date-time" },
+        "acceptedByUserId": { "type": "string" },
+        "revokedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "householdId",
+        "householdName",
+        "inviterUserId",
+        "inviterName",
+        "inviteeEmail",
+        "invitationTokenHash",
+        "role",
+        "status",
+        "adminUids",
+        "createdAt",
+        "expiresAt"
+      ]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Shared household expense record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "amount": { "type": "number" },
+        "currencySymbol": { "type": "string" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "paidByMemberId": { "type": "string" },
+        "paidByMemberName": { "type": "string" },
+        "splitType": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "householdId": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "note": { "type": "string" },
+        "isRecurring": { "type": "boolean" },
+        "recurringFrequency": { "type": "string" },
+        "recurringDayOfMonth": { "type": "number" },
+        "isAutoCreated": { "type": "boolean" },
+        "isSettled": { "type": "boolean" },
+        "receiptUri": { "type": "string" },
+        "tags": { "type": "string" }
+      },
+      "required": ["id", "amount", "category", "description", "householdId", "timestamp"]
+    },
+    "Income": {
+      "title": "Income",
+      "description": "Shared household income record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "amount": { "type": "number" },
+        "source": { "type": "string" },
+        "category": { "type": "string" },
+        "date": { "type": "number" },
+        "receivedBy": { "type": "string" },
+        "receivedByName": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "householdId": { "type": "string" },
+        "currencySymbol": { "type": "string" }
+      },
+      "required": ["id", "amount", "source", "householdId", "date"]
+    },
+    "CategoryBudget": {
+      "title": "CategoryBudget",
+      "description": "Category-level monthly budget limit.",
+      "type": "object",
+      "properties": {
+        "categoryName": { "type": "string" },
+        "monthlyLimit": { "type": "number" },
+        "householdId": { "type": "string" },
+        "iconName": { "type": "string" },
+        "colorHex": { "type": "string" }
+      },
+      "required": ["categoryName", "monthlyLimit", "householdId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user profile and active household association."
+    },
+    "/households/{householdId}": {
+      "schema": { "$ref": "#/entities/Household" },
+      "description": "Household settings and metadata, accessible only to verified members."
+    },
+    "/households/{householdId}/members/{memberId}": {
+      "schema": { "$ref": "#/entities/FamilyMember" },
+      "description": "Verified household members and RBAC roles."
+    },
+    "/households/{householdId}/expenses/{expenseId}": {
+      "schema": { "$ref": "#/entities/Expense" },
+      "description": "Private household expenses accessible only to verified members."
+    },
+    "/households/{householdId}/incomes/{incomeId}": {
+      "schema": { "$ref": "#/entities/Income" },
+      "description": "Private household incomes accessible only to verified members."
+    },
+    "/households/{householdId}/budgets/{budgetId}": {
+      "schema": { "$ref": "#/entities/CategoryBudget" },
+      "description": "Private household category budgets accessible only to verified members."
+    },
+    "/invitations/{tokenHash}": {
+      "schema": { "$ref": "#/entities/Invitation" },
+      "description": "Hashed single-use family invitations keyed by SHA-256 token hash."
+    }
+  }
+}

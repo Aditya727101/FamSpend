@@ -15,6 +15,15 @@ interface FamilyMemberDao {
     @Query("SELECT * FROM family_members WHERE householdId = :householdId ORDER BY name ASC")
     fun getMembersByHousehold(householdId: String): Flow<List<FamilyMemberEntity>>
 
+    @Query("SELECT * FROM family_members WHERE householdId = :householdId ORDER BY name ASC")
+    suspend fun getMembersByHouseholdOnce(householdId: String): List<FamilyMemberEntity>
+
+    @Query("SELECT * FROM family_members WHERE householdId = :householdId AND userId = :userId LIMIT 1")
+    suspend fun getMemberByUserId(householdId: String, userId: String): FamilyMemberEntity?
+
+    @Query("SELECT * FROM family_members WHERE householdId = :householdId AND LOWER(email) = LOWER(:email) LIMIT 1")
+    suspend fun getMemberByEmail(householdId: String, email: String): FamilyMemberEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMember(member: FamilyMemberEntity)
 

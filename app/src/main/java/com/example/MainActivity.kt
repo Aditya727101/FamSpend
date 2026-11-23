@@ -1,5 +1,6 @@
 package com.example
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -13,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.MainAppShell
 import com.example.ui.theme.FamSpendTheme
+import com.example.util.InvitationTokenUtil
 import com.example.viewmodel.FamilyExpenseViewModel
 
 class MainActivity : ComponentActivity() {
@@ -22,6 +24,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        handleDeepLinkIntent(intent)
         setContent {
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             FamSpendTheme(darkTheme = uiState.isDarkMode) {
@@ -35,6 +38,22 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleDeepLinkIntent(intent)
+    }
+
+    private fun handleDeepLinkIntent(intent: Intent?) {
+        val dataUri = intent?.data ?: return
+        val uriString = dataUri.toString()
+        val tokenParam = dataUri.getQueryParameter("token")
+            ?: InvitationTokenUtil.extractTokenFromInput(uriString)
+        if (!tokenParam.isNullOrBlank()) {
+            viewModel.handleIncomingInvitationLink(tokenParam)
         }
     }
 }

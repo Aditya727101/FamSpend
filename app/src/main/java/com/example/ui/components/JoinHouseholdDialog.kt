@@ -23,22 +23,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.util.InvitationTokenUtil
 
 @Composable
 fun JoinHouseholdDialog(
     currentHouseholdId: String,
     onDismiss: () -> Unit,
-    onJoin: (householdCode: String, householdName: String) -> Unit
+    onSubmitInvitationLink: (inviteLinkOrToken: String) -> Unit
 ) {
-    var codeText by remember { mutableStateOf("") }
-    var nameText by remember { mutableStateOf("") }
+    var linkText by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "Join or Create Family Sync Group",
+                text = "Join Household via Invitation",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
@@ -52,7 +52,7 @@ fun JoinHouseholdDialog(
                     .padding(vertical = 4.dp)
             ) {
                 Text(
-                    text = "Enter a Family Invite Code from another phone to sync real-time spending, or create a new family group code.",
+                    text = "Paste a family invitation link or secure invitation token shared by your household Owner or Admin. Joining requires verifying your invitation before accessing household data.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -60,15 +60,19 @@ fun JoinHouseholdDialog(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 OutlinedTextField(
-                    value = codeText,
+                    value = linkText,
                     onValueChange = {
-                        codeText = it.uppercase()
+                        linkText = it
                         errorMessage = null
                     },
-                    label = { Text("Family Invite / Sync Code") },
-                    placeholder = { Text("e.g. FAM-7892-OAK") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().testTag("household_code_input")
+                    label = { Text("Invitation Link or Token") },
+                    placeholder = { Text("https://famspend.app/invite?token=...") },
+                    singleLine = false,
+                    maxLines = 3,
+                    isError = errorMessage != null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("household_code_input")
                 )
 
                 if (errorMessage != null) {
@@ -76,35 +80,24 @@ fun JoinHouseholdDialog(
                         text = errorMessage!!,
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(top = 4.dp)
+                        modifier = Modifier.padding(top = 6.dp)
                     )
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = nameText,
-                    onValueChange = { nameText = it },
-                    label = { Text("Family / Group Name (Optional)") },
-                    placeholder = { Text("e.g. The Miller Family") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().testTag("household_name_input")
-                )
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    val code = codeText.trim().uppercase()
-                    if (code.isBlank()) {
-                        errorMessage = "Please enter a valid family sync code"
+                    val token = InvitationTokenUtil.extractTokenFromInput(linkText)
+                    if (token == null) {
+                        errorMessage = "Please paste a valid FamSpend invitation link or token."
                     } else {
-                        onJoin(code, nameText.trim())
+                        onSubmitInvitationLink(linkText.trim())
                     }
                 },
                 modifier = Modifier.testTag("join_household_confirm_button")
             ) {
-                Text("Connect & Sync")
+                Text("Verify Invitation")
             }
         },
         dismissButton = {
