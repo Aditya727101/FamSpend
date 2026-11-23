@@ -566,7 +566,7 @@ private fun AccountSelectorDropdown(
             },
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier
-                .menuAnchor()
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
                 .fillMaxWidth()
         )
 

@@ -39,7 +39,7 @@ class FirestoreSyncManager(
                 firestore = FirebaseFirestore.getInstance().apply {
                     try {
                         val settings = FirebaseFirestoreSettings.Builder()
-                            .setPersistenceEnabled(true)
+                            .setLocalCacheSettings(com.google.firebase.firestore.PersistentCacheSettings.newBuilder().build())
                             .build()
                         firestoreSettings = settings
                         Log.d("FirestoreSyncManager", "Firestore offline persistent disk cache enabled.")

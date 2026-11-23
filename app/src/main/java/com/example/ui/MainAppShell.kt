@@ -138,9 +138,9 @@ fun MainAppShell(
     val fabSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val closeFabSheetWithAction: ((() -> Unit)?) -> Unit = { action ->
         scope.launch {
-            fabSheetState.hide()
-        }.invokeOnCompletion {
-            if (!fabSheetState.isVisible) {
+            try {
+                fabSheetState.hide()
+            } finally {
                 viewModel.closeFabMenu()
                 action?.invoke()
             }
@@ -159,6 +159,15 @@ fun MainAppShell(
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // BackHandler: Handle back presses intuitively
+    androidx.activity.compose.BackHandler(enabled = uiState.isFabMenuOpen || uiState.selectedExpenseIds.isNotEmpty() || selectedTab != 0) {
+        when {
+            uiState.isFabMenuOpen -> viewModel.closeFabMenu()
+            uiState.selectedExpenseIds.isNotEmpty() -> viewModel.clearExpenseSelection()
+            selectedTab != 0 -> selectedTab = 0
+        }
+    }
 
     val handleDeleteExpenseWithUndo: (ExpenseEntity) -> Unit = { expense ->
         viewModel.deleteExpense(expense)

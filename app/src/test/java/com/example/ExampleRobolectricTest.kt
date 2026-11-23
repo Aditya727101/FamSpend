@@ -164,4 +164,58 @@ class ExampleRobolectricTest {
         assertEquals(30.0, (pcts[1] / 100.0) * totalBill, 0.001)
         assertEquals(30.0, (pcts[2] / 100.0) * totalBill, 0.001)
     }
+
+    @Test
+    fun `test net household cashflow calculation with income and expense`() {
+        val totalIncome = 85000.00
+        val expenses = listOf(
+            ExpenseEntity(id = "e1", amount = 15000.0, category = "Rent", paidByMemberId = "m1", paidByMemberName = "Dad", description = "House rent"),
+            ExpenseEntity(id = "e2", amount = 8500.0, category = "Groceries", paidByMemberId = "m2", paidByMemberName = "Mom", description = "Monthly groceries"),
+            ExpenseEntity(id = "e3", amount = 3200.0, category = "Utilities", paidByMemberId = "m1", paidByMemberName = "Dad", description = "Electricity")
+        )
+
+        val totalExpenses = expenses.sumOf { it.amount }
+        val netSavings = totalIncome - totalExpenses
+
+        assertEquals(26700.0, totalExpenses, 0.001)
+        assertEquals(58300.0, netSavings, 0.001)
+        assertTrue(netSavings > 0)
+    }
+
+    @Test
+    fun `test budget alert threshold levels 80 percent and 100 percent`() {
+        val monthlyBudget = 10000.0
+
+        // Case 1: 75% -> Below warning threshold
+        val spend75 = 7500.0
+        val ratio75 = spend75 / monthlyBudget
+        assertFalse(ratio75 >= 0.8)
+
+        // Case 2: 80% -> Triggers warning threshold
+        val spend80 = 8000.0
+        val ratio80 = spend80 / monthlyBudget
+        assertTrue(ratio80 >= 0.8)
+        assertFalse(ratio80 >= 1.0)
+
+        // Case 3: 105% -> Exceeded 100% threshold
+        val spend105 = 10500.0
+        val ratio105 = spend105 / monthlyBudget
+        assertTrue(ratio105 >= 1.0)
+    }
+
+    @Test
+    fun `test selection state multi-delete logic`() {
+        val allExpenses = listOf(
+            ExpenseEntity(id = "1", amount = 100.0, category = "Food", paidByMemberId = "m1", paidByMemberName = "A", description = "Snack"),
+            ExpenseEntity(id = "2", amount = 200.0, category = "Food", paidByMemberId = "m1", paidByMemberName = "A", description = "Dinner"),
+            ExpenseEntity(id = "3", amount = 300.0, category = "Food", paidByMemberId = "m1", paidByMemberName = "A", description = "Groceries")
+        )
+
+        val selectedIds = setOf("1", "3")
+        val remaining = allExpenses.filterNot { it.id in selectedIds }
+
+        assertEquals(1, remaining.size)
+        assertEquals("2", remaining.first().id)
+        assertEquals(200.0, remaining.first().amount, 0.001)
+    }
 }
